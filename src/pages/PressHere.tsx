@@ -12,6 +12,8 @@ const DOT_SIZE = 80
 
 // Fixed horizontal positions for color baskets — same across all collection pages
 const BASKET_LEFT: Record<string, string> = { [YELLOW]: '50%', [BLUE]: '25%', [RED]: '75%' }
+// Fixed vertical positions in portrait mode — same across all collection pages so baskets don't jump
+const BASKET_TOP:  Record<string, string> = { [YELLOW]: '25%', [BLUE]: '50%', [RED]: '75%' }
 
 const COL_X = [25, 50, 75]
 const ROW_Y = [84, 67, 50, 33, 16]
@@ -55,6 +57,7 @@ type Handoff = {
 const HandoffCtx = createContext<React.MutableRefObject<Handoff>>(
   { current: { page4Dots: null, page5Dots: null, page6Dots: null, ch2p2Dots: null, ch2LatestDots: null } }
 )
+const DotSizeCtx = createContext(DOT_SIZE)
 type ShapeDef = { vertices: [number,number][]; open: boolean; emoji: string; label: string }
 const Ch2ShapesCtx = createContext<ShapeDef[]>([])
 
@@ -125,10 +128,11 @@ function SetDone({ done }: { done: boolean }) {
 function DotMount({ color, x, y, onClick, interactive = true }: {
   color: string; x: number; y: number; onClick: () => void; interactive?: boolean
 }) {
+  const ds = useContext(DotSizeCtx)
   return (
     <div
       onClick={onClick}
-      style={{ ...dotStyle(color, interactive), left: `${x}%`, top: `${y}%`, transform: 'translate(-50%,-50%)' }}
+      style={{ ...dotStyle(color, interactive, ds), left: `${x}%`, top: `${y}%`, transform: 'translate(-50%,-50%)' }}
     />
   )
 }
@@ -167,6 +171,7 @@ function useRYBKeyframe() {
 }
 
 function RainbowDot({ i, onClick, disabled }: { i: number; onClick: () => void; disabled?: boolean }) {
+  const ds = useContext(DotSizeCtx)
   return (
     <div
       onClick={disabled ? undefined : onClick}
@@ -174,7 +179,7 @@ function RainbowDot({ i, onClick, disabled }: { i: number; onClick: () => void; 
         position: 'absolute',
         left: `${COL_X[i]}%`, top: `${ROW_Y[0]}%`,
         transform: 'translate(-50%,-50%)',
-        width: DOT_SIZE, height: DOT_SIZE,
+        width: ds, height: ds,
         borderRadius: '50%',
         cursor: disabled ? 'default' : 'pointer',
         WebkitTapHighlightColor: 'transparent',
@@ -207,6 +212,7 @@ function Page1() {
 
 // ─── Page 2+3 — reveal colors then grow columns ───────────────────────────────
 function Page23() {
+  const ds          = useContext(DotSizeCtx)
   const [counts, setCounts] = useState([0, 0, 0])
   const done        = counts.every(c => c === 5)
   const allRevealed = counts.every(c => c >= 1)
@@ -232,7 +238,7 @@ function Page23() {
                   position: 'absolute',
                   left: `${COL_X[i]}%`, top: `${ROW_Y[0]}%`,
                   transform: 'translate(-50%,-50%)',
-                  width: DOT_SIZE, height: DOT_SIZE,
+                  width: ds, height: ds,
                   borderRadius: '50%',
                   cursor: clickable ? 'pointer' : 'default',
                   WebkitTapHighlightColor: 'transparent',
@@ -337,19 +343,21 @@ function Page4() {
     if (running.current) return
     running.current = true
     const step = () => {
+      const cw = canvasRef.current?.offsetWidth  ?? 960
+      const ch = canvasRef.current?.offsetHeight ?? 520
+      const rxA = DOT_SIZE / 2 / cw * 100
+      const ryA = DOT_SIZE / 2 / ch * 100
       let anyMoving = false
       dotsRef.current = dotsRef.current.map(({ x, y, vx, vy, friction, ...rest }) => {
         x += vx; y += vy
-        if (x < RX)        { x = RX;        vx =  Math.abs(vx) * BOUNCE }
-        if (x > 100 - RX)  { x = 100 - RX;  vx = -Math.abs(vx) * BOUNCE }
-        if (y < RY)        { y = RY;        vy =  Math.abs(vy) * BOUNCE }
-        if (y > 100 - RY)  { y = 100 - RY;  vy = -Math.abs(vy) * BOUNCE }
+        if (x < rxA)        { x = rxA;        vx =  Math.abs(vx) * BOUNCE }
+        if (x > 100 - rxA)  { x = 100 - rxA;  vx = -Math.abs(vx) * BOUNCE }
+        if (y < ryA)        { y = ryA;        vy =  Math.abs(vy) * BOUNCE }
+        if (y > 100 - ryA)  { y = 100 - ryA;  vy = -Math.abs(vy) * BOUNCE }
         vx *= friction; vy *= friction
         if (Math.abs(vx) > 0.05 || Math.abs(vy) > 0.05) anyMoving = true
         return { ...rest, x, y, vx, vy, friction }
       })
-      const cw = canvasRef.current?.offsetWidth  ?? 960
-      const ch = canvasRef.current?.offsetHeight ?? 520
       dotsRef.current = resolveCollisions(dotsRef.current, cw, ch)
       handoff.current.page4Dots = dotsRef.current.map(({ x, y }) => ({ x, y }))
       tick(n => n + 1)
@@ -436,6 +444,8 @@ function Page56() {
       if (!alive) return
       const cw  = canvasRef.current?.clientWidth  ?? 960
       const ch  = canvasRef.current?.clientHeight ?? 520
+      const rxA = DOT_SIZE / 2 / cw * 100
+      const ryA = DOT_SIZE / 2 / ch * 100
       const { gx, gy } = gravRef.current
       const mode = modeRef.current
       let settling = true
@@ -455,14 +465,14 @@ function Page56() {
         }
         vx *= friction; vy *= friction
         x += vx; y += vy
-        if (x < RX)       { x = RX;       vx =  Math.abs(vx) * BOUNCE }
-        if (x > 100 - RX) { x = 100 - RX; vx = -Math.abs(vx) * BOUNCE }
-        if (y < RY)       { y = RY;       vy =  Math.abs(vy) * BOUNCE }
-        if (y > 100 - RY) { y = 100 - RY; vy = -Math.abs(vy) * BOUNCE }
+        if (x < rxA)       { x = rxA;       vx =  Math.abs(vx) * BOUNCE }
+        if (x > 100 - rxA) { x = 100 - rxA; vx = -Math.abs(vx) * BOUNCE }
+        if (y < ryA)       { y = ryA;       vy =  Math.abs(vy) * BOUNCE }
+        if (y > 100 - ryA) { y = 100 - ryA; vy = -Math.abs(vy) * BOUNCE }
         return { ...rest, x, y, vx, vy, friction }
       })
 
-      dotsRef.current = resolveCollisions(dotsRef.current, cw, ch, DOT_SIZE)
+      dotsRef.current = resolveCollisions(dotsRef.current, cw, ch)
 
       // Gravity settled → switch back to Brownian
       if (mode === 'gravity' && settling) {
@@ -577,17 +587,26 @@ function shapePos(shape: number, i: number, cw: number, ch: number): { x: number
       return { x: 30 + col * 10, y: [18, 50, 82][row] }
     }
     case 2: {
-      // Real circle: R=250px, chord≈104px gives ~24px gap between dots
-      const R = 250
+      // Circle scaled to canvas; R ≤ 38% of each axis leaves ~12% edge padding for dot centres
+      const R = Math.min(250, cw * 0.38, ch * 0.38)
       const θ = (2 * Math.PI * i / 15) - Math.PI / 2
       return { x: 50 + (R / cw * 100) * Math.cos(θ), y: 50 + (R / ch * 100) * Math.sin(θ) }
     }
     case 3: {
-      // Real half-circle arch: R=420px, chord≈94px gives ~14px gap; cy=50+ry/2 centers vertically
-      const R = 420
+      if (ch > cw) {
+        // Portrait: rotate arch 90° → vertical C-shape, centred; 38%/78% limits give ~12% edge padding
+        const R = Math.min(420, cw * 0.78, ch * 0.38)
+        const rx = R / cw * 100
+        const ry = R / ch * 100
+        const cx = 50 - rx / 2
+        const θ = -Math.PI / 2 + (i / 14) * Math.PI
+        return { x: cx + rx * Math.cos(θ), y: 50 + ry * Math.sin(θ) }
+      }
+      // Landscape: horizontal arch over top; 40%/78% limits give ~10% edge padding
+      const R = Math.min(420, cw * 0.40, ch * 0.78)
       const ry = R / ch * 100
-      const cy = 50 + ry / 2   // midpoint of (cy-ry .. cy) sits at 50%
-      const θ = Math.PI + (i / 14) * Math.PI   // π → 2π sweeps through top
+      const cy = 50 + ry / 2
+      const θ = Math.PI + (i / 14) * Math.PI
       return { x: 50 + (R / cw * 100) * Math.cos(θ), y: cy + ry * Math.sin(θ) }
     }
     default:
@@ -596,6 +615,7 @@ function shapePos(shape: number, i: number, cw: number, ch: number): { x: number
 }
 
 function Page7() {
+  const ds        = useContext(DotSizeCtx)
   const active    = useContext(PageActiveCtx)
   const handoff   = useContext(HandoffCtx)
   const [shapeIdx, setShapeIdx] = useState(-1)  // -1 = not yet clicked
@@ -643,7 +663,7 @@ function Page7() {
               position: 'absolute',
               left: `${pos.x}%`, top: `${pos.y}%`,
               transform: 'translate(-50%,-50%)',
-              width: DOT_SIZE, height: DOT_SIZE, borderRadius: '50%',
+              width: ds, height: ds, borderRadius: '50%',
               background: color,
               transition: shapeIdx >= 0
                 ? `left ${0.45 + i * 0.035}s cubic-bezier(0.34,1.1,0.64,1), top ${0.45 + i * 0.035}s cubic-bezier(0.34,1.1,0.64,1)`
@@ -661,6 +681,7 @@ function Page7() {
 
 // ─── Page 8 — lights out ──────────────────────────────────────────────────────
 function Page8() {
+  const ds                        = useContext(DotSizeCtx)
   const [dark, setDark]           = useState(false)
   const [toggleCount, setToggleCount] = useState(0)
   const done8 = toggleCount >= 2   // off once + back on once
@@ -777,7 +798,7 @@ function Page8() {
                 position: 'absolute',
                 left: `${pos.x}%`, top: `${pos.y}%`,
                 transform: 'translate(-50%,-50%)',
-                width: DOT_SIZE, height: DOT_SIZE, borderRadius: '50%',
+                width: ds, height: ds, borderRadius: '50%',
                 background: color,
                 cursor: isYellow ? 'pointer' : 'default',
                 opacity: dimmed ? 0.10 : 1,
@@ -816,6 +837,9 @@ const YELLOW_IDXS = COLOR_ROW.flatMap((c, i) => c === YELLOW ? [i] : [])
 type CollectPhase = 'arch' | 'flying' | 'gone'
 
 function Page9() {
+  const ds            = useContext(DotSizeCtx)
+  const vw            = useWindowWidth()
+  const isLandscape   = useIsLandscape()
   const canvasRef     = useRef<HTMLDivElement>(null)
   const basketBodyRef = useRef<HTMLDivElement>(null)
   const [dims,   setDims]   = useState({ cw: 960, ch: 640 })
@@ -878,7 +902,7 @@ function Page9() {
                 left:  `${atTarget ? target.x : pos.x}%`,
                 top:   `${atTarget ? target.y : pos.y}%`,
                 transform: 'translate(-50%,-50%)',
-                width: DOT_SIZE + 40, height: DOT_SIZE + 40,
+                width: ds + 40, height: ds + 40,
                 display: 'flex', alignItems: 'center', justifyContent: 'center',
                 opacity: phase === 'gone' ? 0 : 1,
                 cursor: isYellow && phase === 'arch' ? 'pointer' : 'default',
@@ -891,33 +915,29 @@ function Page9() {
                 pointerEvents: isYellow && phase === 'arch' ? 'auto' : 'none',
               }}
             >
-              <div style={{ width: DOT_SIZE, height: DOT_SIZE, borderRadius: '50%', background: color, pointerEvents: 'none' }} />
+              <div style={{ width: ds, height: ds, borderRadius: '50%', background: color, pointerEvents: 'none' }} />
             </div>
           )
         })}
 
         {/* Basket */}
-        <div style={{
-          position: 'absolute', left: BASKET_LEFT[YELLOW], bottom: '5%',
-          transform: 'translateX(-50%)',
-          pointerEvents: 'none', zIndex: 0,
-        }}>
-          <div style={{
-            margin: '0 auto', width: 70, height: 28,
-            border: `5px solid ${YELLOW}`, borderBottom: 'none',
-            borderRadius: '40px 40px 0 0',
-          }} />
-          <div ref={basketBodyRef} style={{
-            width: 110, height: 72,
-            border: `5px solid ${YELLOW}`,
-            borderRadius: '0 0 18px 18px',
-            background: YELLOW + '20',
-            display: 'flex', alignItems: 'center', justifyContent: 'center',
-            fontSize: 22, fontWeight: 700, color: YELLOW,
-          }}>
-            {`${collected}/${YELLOW_IDXS.length}`}
-          </div>
-        </div>
+        {(() => {
+          const bw   = Math.min(110, Math.max(60, Math.round(vw * 0.17)))
+          const bh   = Math.round(bw * 72 / 110)
+          const hw   = Math.round(bw * 70 / 110)
+          const hh   = Math.round(bw * 28 / 110)
+          const bpos = isLandscape
+            ? { left: BASKET_LEFT[YELLOW], bottom: '5%', top: 'auto', transform: 'translateX(-50%)' }
+            : { left: '15%', top: BASKET_TOP[YELLOW], bottom: 'auto', transform: 'translate(-50%,-50%)' }
+          return (
+            <div style={{ position: 'absolute', ...bpos, pointerEvents: 'none', zIndex: 0, display: 'flex', flexDirection: 'column', alignItems: 'center' }}>
+              <div style={{ margin: '0 auto', width: hw, height: hh, border: `5px solid ${YELLOW}`, borderBottom: 'none', borderRadius: '40px 40px 0 0' }} />
+              <div ref={basketBodyRef} style={{ width: bw, height: bh, border: `5px solid ${YELLOW}`, borderRadius: '0 0 18px 18px', background: YELLOW + '20', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: Math.max(13, Math.round(bw * 0.2)), fontWeight: 700, color: YELLOW }}>
+                {`${collected}/${YELLOW_IDXS.length}`}
+              </div>
+            </div>
+          )
+        })()}
 
       </div>
       <IntroText>{intro}</IntroText>
@@ -937,9 +957,9 @@ function makeBrownDots(targetColor: string, cw: number, ch: number): BrownDot[] 
   })
 }
 
-function stepBrown(dots: BrownDot[], maxSpd: number, cw: number, ch: number): BrownDot[] {
-  const rxPct = DOT_SIZE / 2 / cw * 100
-  const ryPct = DOT_SIZE / 2 / ch * 100
+function stepBrown(dots: BrownDot[], maxSpd: number, cw: number, ch: number, dotSize = DOT_SIZE): BrownDot[] {
+  const rxPct = dotSize / 2 / cw * 100
+  const ryPct = dotSize / 2 / ch * 100
   return dots.map(dot => {
     if (dot.phase !== 'arch') return dot
     let vx = dot.vx + (Math.random() - 0.5) * 0.12
@@ -959,6 +979,9 @@ function stepBrown(dots: BrownDot[], maxSpd: number, cw: number, ch: number): Br
 function BrownCatch({ targetColor, maxSpd, prevColors, previewColor }: {
   targetColor: string; maxSpd: number; prevColors: string[]; previewColor?: string
 }) {
+  const ds            = useContext(DotSizeCtx)
+  const vw            = useWindowWidth()
+  const isLandscape   = useIsLandscape()
   const active        = useContext(PageActiveCtx)
   const canvasRef     = useRef<HTMLDivElement>(null)
   const basketBodyRef = useRef<HTMLDivElement>(null)
@@ -1013,8 +1036,8 @@ function BrownCatch({ targetColor, maxSpd, prevColors, previewColor }: {
     let alive = true
     const step = () => {
       if (!alive) return
-      dotsRef.current  = stepBrown(dotsRef.current,  maxSpd,        dimsRef.current.cw, dimsRef.current.ch)
-      previewRef.current = stepBrown(previewRef.current, maxSpd * 2, dimsRef.current.cw, dimsRef.current.ch)
+      dotsRef.current  = stepBrown(dotsRef.current,  maxSpd,        dimsRef.current.cw, dimsRef.current.ch, ds)
+      previewRef.current = stepBrown(previewRef.current, maxSpd * 2, dimsRef.current.cw, dimsRef.current.ch, ds)
       tick(n => n + 1)
       rafRef.current = requestAnimationFrame(step)
     }
@@ -1063,7 +1086,7 @@ function BrownCatch({ targetColor, maxSpd, prevColors, previewColor }: {
                 left: `${atTarget ? targetPct.x : dot.x}%`,
                 top:  `${atTarget ? targetPct.y : dot.y}%`,
                 transform: 'translate(-50%,-50%)',
-                width: DOT_SIZE + 40, height: DOT_SIZE + 40,
+                width: ds + 40, height: ds + 40,
                 display: 'flex', alignItems: 'center', justifyContent: 'center',
                 opacity: phase === 'gone' ? 0 : 1,
                 cursor: phase === 'arch' ? 'pointer' : 'default',
@@ -1076,7 +1099,7 @@ function BrownCatch({ targetColor, maxSpd, prevColors, previewColor }: {
                 pointerEvents: phase === 'arch' ? 'auto' : 'none',
               }}
             >
-              <div style={{ width: DOT_SIZE, height: DOT_SIZE, borderRadius: '50%', background: targetColor, pointerEvents: 'none' }} />
+              <div style={{ width: ds, height: ds, borderRadius: '50%', background: targetColor, pointerEvents: 'none' }} />
             </div>
           )
         })}
@@ -1087,42 +1110,35 @@ function BrownCatch({ targetColor, maxSpd, prevColors, previewColor }: {
             position: 'absolute',
             left: `${dot.x}%`, top: `${dot.y}%`,
             transform: 'translate(-50%,-50%)',
-            width: DOT_SIZE, height: DOT_SIZE, borderRadius: '50%',
+            width: ds, height: ds, borderRadius: '50%',
             background: previewColor,
             pointerEvents: 'none', zIndex: 1,
           }} />
         ))}
 
         {/* Baskets — fixed positions by color so they don't shift between pages */}
-        {allColors.map((color, bi) => {
-          const isTarget = bi === allColors.length - 1
-          const count    = isTarget ? collected : totalPerColor(color)
-          const total    = totalPerColor(color)
-          return (
-            <div key={color} style={{
-              position: 'absolute', left: BASKET_LEFT[color], bottom: '5%',
-              transform: 'translateX(-50%)',
-              display: 'flex', flexDirection: 'column', alignItems: 'center',
-              pointerEvents: 'none', zIndex: 0,
-            }}>
-              <div style={{
-                margin: '0 auto', width: 70, height: 28,
-                border: `5px solid ${color}`, borderBottom: 'none',
-                borderRadius: '40px 40px 0 0',
-              }} />
-              <div ref={isTarget ? basketBodyRef : undefined} style={{
-                width: 110, height: 72,
-                border: `5px solid ${color}`,
-                borderRadius: '0 0 18px 18px',
-                background: color + '20',
-                display: 'flex', alignItems: 'center', justifyContent: 'center',
-                fontSize: 22, fontWeight: 700, color,
-              }}>
-                {`${count}/${total}`}
+        {(() => {
+          const bw  = Math.min(110, Math.max(60, Math.round(vw * 0.17)))
+          const bh  = Math.round(bw * 72 / 110)
+          const hw  = Math.round(bw * 70 / 110)
+          const hh  = Math.round(bw * 28 / 110)
+          return allColors.map((color, bi) => {
+            const isTarget = bi === allColors.length - 1
+            const count    = isTarget ? collected : totalPerColor(color)
+            const total    = totalPerColor(color)
+            const bpos     = isLandscape
+              ? { left: BASKET_LEFT[color], bottom: '5%', top: 'auto', transform: 'translateX(-50%)' }
+              : { left: '15%', top: BASKET_TOP[color], bottom: 'auto', transform: 'translate(-50%,-50%)' }
+            return (
+              <div key={color} style={{ position: 'absolute', ...bpos, display: 'flex', flexDirection: 'column', alignItems: 'center', pointerEvents: 'none', zIndex: 0 }}>
+                <div style={{ margin: '0 auto', width: hw, height: hh, border: `5px solid ${color}`, borderBottom: 'none', borderRadius: '40px 40px 0 0' }} />
+                <div ref={isTarget ? basketBodyRef : undefined} style={{ width: bw, height: bh, border: `5px solid ${color}`, borderRadius: '0 0 18px 18px', background: color + '20', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: Math.max(13, Math.round(bw * 0.2)), fontWeight: 700, color }}>
+                  {`${count}/${total}`}
+                </div>
               </div>
-            </div>
-          )
-        })}
+            )
+          })
+        })()}
 
       </div>
       <IntroText>{intro}</IntroText>
@@ -1137,15 +1153,15 @@ function Page11() { return <BrownCatch targetColor={RED}  maxSpd={0.7}  prevColo
 // ─── Shared styles ────────────────────────────────────────────────────────────
 const canvasStyle: React.CSSProperties = {
   flex: 1, minHeight: 0,
-  width: '100%', minWidth: 960,
+  width: '100%',
   background: '#fff', borderRadius: 18,
   border: '2px solid #ede8df',
   position: 'relative', overflow: 'hidden',
 }
 
-const dotStyle = (color: string, interactive = true): React.CSSProperties => ({
+const dotStyle = (color: string, interactive = true, ds = DOT_SIZE): React.CSSProperties => ({
   position: 'absolute',
-  width: DOT_SIZE, height: DOT_SIZE,
+  width: ds, height: ds,
   borderRadius: '50%', background: color,
   cursor: interactive ? 'pointer' : 'default',
   WebkitTapHighlightColor: 'transparent',
@@ -1167,6 +1183,7 @@ type Ch2P1Phase = 'idle' | 'merging' | 'merged' | 'shining' | 'lit' | 'rainbow' 
 function Chapter2Page1() {
   const active    = useContext(PageActiveCtx)
   const handoff   = useContext(HandoffCtx)
+  const vw        = useWindowWidth()
   const [phase, setPhase] = useState<Ch2P1Phase>('idle')
   const phaseRef  = useRef<Ch2P1Phase>('idle')
   const dotsRef   = useRef<PhysDot[]>([])
@@ -1312,37 +1329,18 @@ function Chapter2Page1() {
       <div ref={canvasRef} style={canvasStyle}>
 
         {/* ── 3 small baskets (idle + merging only) ── */}
-        {showSmallBaskets && colors.map(color => (
-          <div
-            key={color}
-            style={{
-              position: 'absolute',
-              left: phase === 'idle' ? BASKET_LEFT[color] : '50%',
-              bottom: '5%',
-              transform: 'translateX(-50%)',
-              transition: 'left 0.6s cubic-bezier(0.34,1.1,0.64,1)',
-              display: 'flex',
-              flexDirection: 'column', alignItems: 'center',
-              cursor: 'default',
-              pointerEvents: 'none',
-              zIndex: 2,
-            }}
-          >
-            <div style={{
-              margin: '0 auto', width: 70, height: 28,
-              border: `5px solid ${color}`, borderBottom: 'none',
-              borderRadius: '40px 40px 0 0',
-            }} />
-            <div style={{
-              width: 110, height: 72,
-              border: `5px solid ${color}`,
-              borderRadius: '0 0 18px 18px',
-              background: color + '20',
-              display: 'flex', alignItems: 'center', justifyContent: 'center',
-              fontSize: 22, fontWeight: 700, color,
-            }}>✓</div>
-          </div>
-        ))}
+        {showSmallBaskets && (() => {
+          const bw = Math.min(110, Math.max(60, Math.round(vw * 0.17)))
+          const bh = Math.round(bw * 72 / 110)
+          const hw = Math.round(bw * 70 / 110)
+          const hh = Math.round(bw * 28 / 110)
+          return colors.map(color => (
+            <div key={color} style={{ position: 'absolute', left: phase === 'idle' ? BASKET_LEFT[color] : '50%', bottom: '5%', transform: 'translateX(-50%)', transition: 'left 0.6s cubic-bezier(0.34,1.1,0.64,1)', display: 'flex', flexDirection: 'column', alignItems: 'center', cursor: 'default', pointerEvents: 'none', zIndex: 2 }}>
+              <div style={{ margin: '0 auto', width: hw, height: hh, border: `5px solid ${color}`, borderBottom: 'none', borderRadius: '40px 40px 0 0' }} />
+              <div style={{ width: bw, height: bh, border: `5px solid ${color}`, borderRadius: '0 0 18px 18px', background: color + '20', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: Math.max(13, Math.round(bw * 0.2)), fontWeight: 700, color }}>✓</div>
+            </div>
+          ))
+        })()}
 
         {/* ── Rainbow beam ── */}
         {showBeam && (
@@ -1359,45 +1357,24 @@ function Chapter2Page1() {
         )}
 
         {/* ── Big merged basket ── */}
-        {bigBasketShown && (
-          <div
-            onClick={handleRainbowBasketClick}
-            style={{
-              position: 'absolute', left: '50%', bottom: '5%',
-              transform: 'translateX(-50%)',
-              display: 'flex', flexDirection: 'column', alignItems: 'center',
-              animation: phase === 'merged' ? 'fadeIn 0.45s ease forwards' : 'none',
-              cursor: phase === 'rainbow' ? 'pointer' : 'default',
-              pointerEvents: phase === 'rainbow' ? 'auto' : 'none',
-              zIndex: 11,
-            }}
-          >
-            <div style={{
-              margin: '0 auto', width: 120, height: 46,
-              border: `6px solid ${isRainbow ? '#ffdd00' : '#888'}`,
-              borderBottom: 'none', borderRadius: '60px 60px 0 0',
-              animation:  isRainbow ? 'rybShimmer 2s linear infinite' : 'none',
-              animationDelay: isRainbow ? '-0.5s' : '0s',
-              boxShadow:  isRainbow ? '0 0 22px rgba(255,200,0,0.75)' : 'none',
-              transition: 'box-shadow 0.4s ease',
-            }} />
-            <div style={{
-              width: 190, height: 120,
-              border: `6px solid ${isRainbow ? '#ffdd00' : '#888'}`,
-              borderRadius: '0 0 28px 28px',
-              background:  isRainbow ? undefined : '#88888818',
-              animation:   isRainbow ? 'rybShimmer 2s linear infinite' : 'none',
-              display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 10,
-              boxShadow: isRainbow ? '0 0 32px 8px rgba(255,200,0,0.7),inset 0 0 18px rgba(255,255,255,0.25)' : 'none',
-              transition: 'box-shadow 0.4s ease',
-            }}>
-              {!isRainbow && [YELLOW, BLUE, RED].map(c => (
-                <div key={c} style={{ width: 30, height: 30, borderRadius: '50%', background: c }} />
-              ))}
-              {isRainbow && <span style={{ fontSize: 44, lineHeight: 1 }}>🌈</span>}
+        {bigBasketShown && (() => {
+          const bw  = Math.min(110, Math.max(60, Math.round(vw * 0.17)))
+          const bbw = Math.round(bw * 190 / 110)
+          const bbh = Math.round(bw * 120 / 110)
+          const bhw = Math.round(bw * 120 / 110)
+          const bhh = Math.round(bw *  46 / 110)
+          return (
+            <div onClick={handleRainbowBasketClick} style={{ position: 'absolute', left: '50%', bottom: '5%', transform: 'translateX(-50%)', display: 'flex', flexDirection: 'column', alignItems: 'center', animation: phase === 'merged' ? 'fadeIn 0.45s ease forwards' : 'none', cursor: phase === 'rainbow' ? 'pointer' : 'default', pointerEvents: phase === 'rainbow' ? 'auto' : 'none', zIndex: 11 }}>
+              <div style={{ margin: '0 auto', width: bhw, height: bhh, border: `6px solid ${isRainbow ? '#ffdd00' : '#888'}`, borderBottom: 'none', borderRadius: '60px 60px 0 0', animation: isRainbow ? 'rybShimmer 2s linear infinite' : 'none', animationDelay: isRainbow ? '-0.5s' : '0s', boxShadow: isRainbow ? '0 0 22px rgba(255,200,0,0.75)' : 'none', transition: 'box-shadow 0.4s ease' }} />
+              <div style={{ width: bbw, height: bbh, border: `6px solid ${isRainbow ? '#ffdd00' : '#888'}`, borderRadius: '0 0 28px 28px', background: isRainbow ? undefined : '#88888818', animation: isRainbow ? 'rybShimmer 2s linear infinite' : 'none', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 10, boxShadow: isRainbow ? '0 0 32px 8px rgba(255,200,0,0.7),inset 0 0 18px rgba(255,255,255,0.25)' : 'none', transition: 'box-shadow 0.4s ease' }}>
+                {!isRainbow && [YELLOW, BLUE, RED].map(c => (
+                  <div key={c} style={{ width: Math.round(bw * 30 / 110), height: Math.round(bw * 30 / 110), borderRadius: '50%', background: c }} />
+                ))}
+                {isRainbow && <span style={{ fontSize: Math.max(24, Math.round(bw * 44 / 110)), lineHeight: 1 }}>🌈</span>}
+              </div>
             </div>
-          </div>
-        )}
+          )
+        })()}
 
         {/* ── Dots (burst + roam) ── */}
         {(phase === 'bursting' || phase === 'roaming') && dotsRef.current.map(dot => (
@@ -1428,15 +1405,15 @@ function GreatJob({ onReset, onNextChapter }: { onReset: () => void; onNextChapt
   return (
     <div style={{
       height: '100dvh', display: 'flex', flexDirection: 'column',
-      alignItems: 'center', justifyContent: 'center', gap: 36,
+      alignItems: 'center', justifyContent: 'center', gap: 'clamp(20px, 4vw, 36px)',
       background: '#fff',
       fontFamily: '"Nunito Variable", Nunito, sans-serif',
       userSelect: 'none',
     }}>
       <img
-        src="/src/games/press-here/completion-ch2.gif"
+        src={import.meta.env.BASE_URL + 'completion-ch2.gif'}
         alt="Great job!"
-        style={{ width: 320, height: 320, borderRadius: 28, objectFit: 'cover' }}
+        style={{ width: 'clamp(180px, 50vw, 320px)', height: 'clamp(180px, 50vw, 320px)', borderRadius: 28, objectFit: 'cover' }}
       />
       <div style={{
         fontSize: 'clamp(56px,8vw,96px)', fontWeight: 900, letterSpacing: -2,
@@ -1499,15 +1476,15 @@ function WoohooScreen({ onReset, onNextChapter }: { onReset: () => void; onNextC
   return (
     <div style={{
       height: '100dvh', display: 'flex', flexDirection: 'column',
-      alignItems: 'center', justifyContent: 'center', gap: 36,
+      alignItems: 'center', justifyContent: 'center', gap: 'clamp(20px, 4vw, 36px)',
       background: '#fff',
       fontFamily: '"Nunito Variable", Nunito, sans-serif',
       userSelect: 'none',
     }}>
       <img
-        src="/src/games/press-here/completion-ch3.gif"
+        src={import.meta.env.BASE_URL + 'completion-ch3.gif'}
         alt="Woohoo!"
-        style={{ width: 320, height: 320, borderRadius: 28, objectFit: 'cover' }}
+        style={{ width: 'clamp(180px, 50vw, 320px)', height: 'clamp(180px, 50vw, 320px)', borderRadius: 28, objectFit: 'cover' }}
       />
       <div style={{
         fontSize: 'clamp(56px,8vw,96px)', fontWeight: 900, letterSpacing: -2,
@@ -1570,12 +1547,12 @@ function AmazingScreen({ onReset }: { onReset: () => void }) {
   return (
     <div style={{
       height: '100dvh', display: 'flex', flexDirection: 'column',
-      alignItems: 'center', justifyContent: 'center', gap: 36,
+      alignItems: 'center', justifyContent: 'center', gap: 'clamp(20px, 4vw, 36px)',
       background: '#fff',
       fontFamily: '"Nunito Variable", Nunito, sans-serif',
       userSelect: 'none',
     }}>
-      <div style={{ fontSize: 140, lineHeight: 1, animation: 'popIn 0.7s cubic-bezier(0.34,1.56,0.64,1) forwards' }}>
+      <div style={{ fontSize: 'clamp(80px, 18vw, 140px)', lineHeight: 1, animation: 'popIn 0.7s cubic-bezier(0.34,1.56,0.64,1) forwards' }}>
         🏆
       </div>
       <div style={{
@@ -1622,13 +1599,13 @@ function WellDone({ onReset, onNextChapter }: { onReset: () => void; onNextChapt
   return (
     <div style={{
       height: '100dvh', display: 'flex', flexDirection: 'column',
-      alignItems: 'center', justifyContent: 'center', gap: 36,
+      alignItems: 'center', justifyContent: 'center', gap: 'clamp(20px, 4vw, 36px)',
       background: '#fff',
       fontFamily: '"Nunito Variable", Nunito, sans-serif',
       userSelect: 'none',
     }}>
       <img
-        src="/src/games/press-here/completion-ch1.gif"
+        src={import.meta.env.BASE_URL + 'completion-ch1.gif'}
         alt="Well done!"
         style={{ maxWidth: 380, maxHeight: 340, width: '100%', borderRadius: 28, objectFit: 'contain', display: 'block' }}
       />
@@ -2549,8 +2526,11 @@ function Ch3Page1({ winTarget = CH3_WIN, variant = 'normal' }: { winTarget?: num
 
         // Spawn (hard mode: gap shrinks as more mountains are jumped)
         if (distRef.current >= nextSpRef.current) {
+          // Scale obstacle to canvas so mountains are always jumpable (jump arc = 18% of ch)
+          const obsH = Math.round(ch * 0.13)
+          const obsW = Math.round(obsH * (CH3_OBS_W / CH3_OBS_H))
           obsRef.current.push({
-            id: ++obsIdRef.current, xPct: 102, wPx: CH3_OBS_W, hPx: CH3_OBS_H,
+            id: ++obsIdRef.current, xPct: 102, wPx: obsW, hPx: obsH,
           })
           if (variant === 'hard') {
             // Base gap shrinks as mountains are cleared; ±30 random jitter stays constant
@@ -2629,7 +2609,7 @@ function Ch3Page1({ winTarget = CH3_WIN, variant = 'normal' }: { winTarget?: num
       >
         {/* Sun — fixed in sky, slowly spinning */}
         <img
-          src="/src/games/press-here/sun.svg"
+          src={import.meta.env.BASE_URL + 'sun.svg'}
           draggable={false}
           style={{
             position: 'absolute', right: '11%', top: '8%',
@@ -3423,6 +3403,96 @@ function Ch3Page3({ winTarget = C3P3_WIN_DIST, variant = 'normal' }: { winTarget
   )
 }
 
+// ─── Ch4 shared layout utilities ─────────────────────────────────────────────
+
+const ch4CanvasStyle: React.CSSProperties = { ...canvasStyle, minWidth: 0 }
+
+function useWindowWidth(): number {
+  const [w, setW] = useState(() => window.innerWidth)
+  useEffect(() => {
+    const h = () => setW(window.innerWidth)
+    window.addEventListener('resize', h)
+    return () => window.removeEventListener('resize', h)
+  }, [])
+  return w
+}
+
+function useIsLandscape(): boolean {
+  const [ls, setLs] = useState(() => window.innerWidth > window.innerHeight)
+  useEffect(() => {
+    const mq = window.matchMedia('(orientation: landscape)')
+    const h  = (e: MediaQueryListEvent) => setLs(e.matches)
+    mq.addEventListener('change', h)
+    return () => mq.removeEventListener('change', h)
+  }, [])
+  return ls
+}
+
+// ─── Ch4 shared components ────────────────────────────────────────────────────
+
+function TurnIndicator({ current, gameOver, mode, P_COLOR, isLandscape, scores }: {
+  current: 'X' | 'O'; gameOver: boolean; mode: TTTMode
+  P_COLOR: Record<'X' | 'O', string>
+  isLandscape: boolean
+  scores?: { X: number; O: number }
+}) {
+  return (
+    <div style={{
+      display: 'flex',
+      flexDirection: isLandscape ? 'column' : 'row',
+      gap: isLandscape ? 10 : 20,
+      alignItems: isLandscape ? 'flex-start' : 'center',
+    }}>
+      {(['X', 'O'] as const).map(p => {
+        const active = current === p && !gameOver
+        const label = scores != null
+          ? String(scores[p])
+          : mode === 'computer' ? (p === 'X' ? 'You' : 'Me') : (p === 'X' ? 'Blue' : 'Red')
+        return (
+          <div key={p} style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
+            <div style={{
+              width: 32, height: 32, borderRadius: '50%',
+              background: P_COLOR[p],
+              flexShrink: 0,
+              display: 'flex', alignItems: 'center', justifyContent: 'center',
+            }}>
+              {active && <span style={{ fontSize: 14, lineHeight: 1, color: '#fff', userSelect: 'none' }}>★</span>}
+            </div>
+            <span style={{
+              fontSize: scores != null ? 22 : 16,
+              fontWeight: 700,
+              color: P_COLOR[p],
+              fontFamily: 'inherit',
+              lineHeight: 1,
+            }}>{label}</span>
+          </div>
+        )
+      })}
+    </div>
+  )
+}
+
+function ModeSelector({ mode, onReset }: { mode: TTTMode; onReset: (m: TTTMode) => void }) {
+  return (
+    <div style={{ display: 'flex', border: '1.5px solid #e8e8e8', borderRadius: 30, overflow: 'hidden' }}>
+      {(['computer', 'two-player'] as const).map(m => (
+        <button key={m} onClick={() => onReset(m)} style={{
+          padding: '5px 16px',
+          background: mode === m ? '#ddd' : 'transparent',
+          color: mode === m ? '#555' : '#bbb',
+          border: 'none', fontSize: 12, fontWeight: mode === m ? 700 : 400,
+          cursor: mode === m ? 'default' : 'pointer',
+          fontFamily: 'inherit',
+          transition: 'background 0.15s, color 0.15s',
+        }}>
+          {m === 'computer' ? 'vs Computer' : '2 Players'}
+        </button>
+      ))}
+    </div>
+  )
+}
+
+
 // ─── Chapter 4 Page 1 — Tic Tac Toe ─────────────────────────────────────────
 type TTTCell = null | 'X' | 'O'
 type TTTStatus = 'playing' | 'x-wins' | 'o-wins' | 'draw'
@@ -3475,8 +3545,11 @@ function TicTacToePage() {
   const [hasWon, setHasWon]     = useState(false)
   const [hovered, setHovered]   = useState<number | null>(null)
   const aiPendingRef            = useRef(false)
+  const isLandscape             = useIsLandscape()
+  const vw                      = useWindowWidth()
 
   const P_COLOR: Record<'X'|'O', string> = { X: BLUE, O: RED }
+  const gameOver = status !== 'playing'
 
   function resetGame(nextMode = mode) {
     setBoard(Array(9).fill(null))
@@ -3520,7 +3593,9 @@ function TicTacToePage() {
     }
   }
 
-  const CELL = 130
+  const CELL = Math.min(130, Math.max(70, isLandscape
+    ? Math.floor((window.innerHeight - 170) / 3)
+    : Math.floor((vw - 50) / 3)))
   const LINE = '2px solid #1a1a1a'
   const isWin = (i: number) => winLine?.includes(i) ?? false
 
@@ -3540,107 +3615,85 @@ function TicTacToePage() {
     : mode === 'computer' ? (current === 'X' ? 'Your turn!' : 'Thinking…')
     : (current === 'X' ? "Blue's turn!" : "Red's turn!")
 
+  const boardGrid = (
+    <div style={{ display: 'grid', gridTemplateColumns: `repeat(3, ${CELL}px)`, gridTemplateRows: `repeat(3, ${CELL}px)` }}>
+      {board.map((cell, i) => {
+        const win      = isWin(i)
+        const hovering = hovered === i && canClick(i)
+        return (
+          <div key={i}
+            onClick={() => handleCellClick(i)}
+            onMouseEnter={() => setHovered(i)}
+            onMouseLeave={() => setHovered(null)}
+            style={{
+              width: CELL, height: CELL,
+              background: win ? P_COLOR[cell as 'X'|'O'] + '22' : 'transparent',
+              ...cellBorders(i),
+              display: 'flex', alignItems: 'center', justifyContent: 'center',
+              cursor: canClick(i) ? 'pointer' : 'default',
+              transition: 'background 0.15s',
+              boxSizing: 'border-box',
+            }}
+          >
+            {cell === 'X' && <div style={{ width: CELL * 0.56, height: CELL * 0.56, borderRadius: '50%', background: BLUE }} />}
+            {cell === 'O' && <div style={{ width: CELL * 0.56, height: CELL * 0.56, borderRadius: '50%', background: RED  }} />}
+            {hovering    && <div style={{ width: CELL * 0.56, height: CELL * 0.56, borderRadius: '50%', background: P_COLOR[current] + '38' }} />}
+          </div>
+        )
+      })}
+    </div>
+  )
+
+  const playAgainOverlay = !gameOver ? null : (
+    <div style={{ position: 'absolute', top: '50%', left: '50%', transform: 'translate(-50%,-50%)', zIndex: 10 }}>
+      <div onClick={() => resetGame()}
+        onMouseDown={e => (e.currentTarget.style.transform = 'scale(0.95)')}
+        onMouseUp={e => (e.currentTarget.style.transform = 'scale(1)')}
+        style={{ padding: '9px 26px', borderRadius: 30, background: status === 'x-wins' ? BLUE : status === 'o-wins' ? RED : '#222', color: '#fff', fontSize: 15, fontWeight: 700, cursor: 'pointer', fontFamily: 'inherit', boxShadow: '0 4px 20px #0003' }}>
+        {status === 'x-wins' ? '🎉 Play again!' : 'Try again!'}
+      </div>
+    </div>
+  )
+
+  const controlBorder = '1.5px solid #ede8df'
+
+  if (isLandscape) {
+    return (
+      <>
+        <div style={{ ...ch4CanvasStyle, flex: 1, display: 'flex', flexDirection: 'row', overflow: 'hidden' }}>
+          {/* Left column: turn + mode */}
+          <div style={{ flexShrink: 0, display: 'flex', flexDirection: 'column', alignItems: 'flex-start', justifyContent: 'space-between', padding: '24px 20px' }}>
+            <TurnIndicator current={current} gameOver={gameOver} mode={mode} P_COLOR={P_COLOR} isLandscape={true} />
+            <ModeSelector mode={mode} onReset={resetGame} />
+          </div>
+          {/* Board */}
+          <div style={{ flex: 1, position: 'relative', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+            {boardGrid}
+            {playAgainOverlay}
+          </div>
+        </div>
+        <IntroText>{intro}</IntroText>
+        <SetDone done={hasWon} />
+      </>
+    )
+  }
+
   return (
     <>
-      <div style={canvasStyle}>
-
-        {/* Turn indicator — pinned to top center */}
-        <div style={{ position: 'absolute', top: 20, left: 0, right: 0, display: 'flex', justifyContent: 'center', gap: 48, alignItems: 'center', fontFamily: 'inherit' }}>
-          {(['X', 'O'] as const).map(p => {
-            const active = current === p && status === 'playing'
-            const label  = mode === 'computer' ? (p === 'X' ? 'You' : 'Me') : (p === 'X' ? 'Blue' : 'Red')
-            return (
-              <div key={p} style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 8, width: 52 }}>
-                <div style={{ width: 26, height: 26, display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
-                  <div style={{
-                    width: 26, height: 26, borderRadius: '50%',
-                    background: P_COLOR[p],
-                    transform: active ? 'scale(1)' : 'scale(0.55)',
-                    opacity:   active ? 1 : 0.3,
-                    transition: 'transform 0.2s, opacity 0.2s',
-                  }} />
-                </div>
-                <span style={{ fontSize: 15, lineHeight: '18px', fontWeight: active ? 900 : 500, color: active ? '#111' : '#bbb', fontFamily: 'inherit', transition: 'font-weight 0.15s, color 0.2s' }}>
-                  {label}
-                </span>
-                <div style={{ height: 3, width: 28, borderRadius: 2, background: P_COLOR[p], opacity: active ? 1 : 0, transition: 'opacity 0.2s' }} />
-              </div>
-            )
-          })}
+      <div style={{ ...ch4CanvasStyle, flex: 1, display: 'flex', flexDirection: 'column', overflow: 'hidden' }}>
+        {/* Top: turn indicator */}
+        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', padding: '14px 16px', flexShrink: 0 }}>
+          <TurnIndicator current={current} gameOver={gameOver} mode={mode} P_COLOR={P_COLOR} isLandscape={false} />
         </div>
-
-        {/* Board + play-again — vertically centered in canvas */}
-        <div style={{ position: 'absolute', inset: 0, display: 'flex', alignItems: 'center', justifyContent: 'center', flexDirection: 'column', gap: 28 }}>
-
-          {/* Board */}
-          <div style={{
-            display: 'grid',
-            gridTemplateColumns: `repeat(3, ${CELL}px)`,
-            gridTemplateRows: `repeat(3, ${CELL}px)`,
-          }}>
-            {board.map((cell, i) => {
-              const win      = isWin(i)
-              const hovering = hovered === i && canClick(i)
-              return (
-                <div key={i}
-                  onClick={() => handleCellClick(i)}
-                  onMouseEnter={() => setHovered(i)}
-                  onMouseLeave={() => setHovered(null)}
-                  style={{
-                    width: CELL, height: CELL,
-                    background: win ? P_COLOR[cell as 'X'|'O'] + '22' : 'transparent',
-                    ...cellBorders(i),
-                    display: 'flex', alignItems: 'center', justifyContent: 'center',
-                    cursor: canClick(i) ? 'pointer' : 'default',
-                    transition: 'background 0.15s',
-                    boxSizing: 'border-box',
-                  }}
-                >
-                  {cell === 'X' && <div style={{ width: CELL * 0.56, height: CELL * 0.56, borderRadius: '50%', background: BLUE }} />}
-                  {cell === 'O' && <div style={{ width: CELL * 0.56, height: CELL * 0.56, borderRadius: '50%', background: RED  }} />}
-                  {hovering    && <div style={{ width: CELL * 0.56, height: CELL * 0.56, borderRadius: '50%', background: P_COLOR[current] + '38' }} />}
-                </div>
-              )
-            })}
-          </div>
-
-          {/* Play again */}
-          {status !== 'playing' && (
-            <div onClick={() => resetGame()} style={{
-              padding: '9px 26px', borderRadius: 30,
-              background: status === 'x-wins' ? BLUE : status === 'o-wins' ? RED : '#222',
-              color: '#fff', fontSize: 15, fontWeight: 700, cursor: 'pointer',
-              fontFamily: 'inherit',
-            }}
-              onMouseDown={e => (e.currentTarget.style.transform = 'scale(0.95)')}
-              onMouseUp={e => (e.currentTarget.style.transform = 'scale(1)')}
-            >
-              {status === 'x-wins' ? '🎉 Play again!' : 'Try again!'}
-            </div>
-          )}
-
+        {/* Middle: game area */}
+        <div style={{ flex: 1, position: 'relative', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+          {boardGrid}
+          {playAgainOverlay}
         </div>
-
-        {/* Mode switcher — pinned to bottom, pill style */}
-        <div style={{
-          position: 'absolute', bottom: 16, left: '50%', transform: 'translateX(-50%)',
-          display: 'flex', border: '1.5px solid #e8e8e8', borderRadius: 30, overflow: 'hidden',
-        }}>
-          {(['computer', 'two-player'] as const).map(m => (
-            <button key={m} onClick={() => resetGame(m)} style={{
-              padding: '5px 16px',
-              background: mode === m ? '#ddd' : 'transparent',
-              color: mode === m ? '#555' : '#bbb',
-              border: 'none', fontSize: 11, fontWeight: mode === m ? 700 : 400,
-              cursor: mode === m ? 'default' : 'pointer',
-              fontFamily: 'inherit',
-              transition: 'background 0.15s, color 0.15s',
-            }}>
-              {m === 'computer' ? 'vs Computer' : '2 Players'}
-            </button>
-          ))}
+        {/* Bottom: mode switch */}
+        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', padding: '12px 16px', flexShrink: 0 }}>
+          <ModeSelector mode={mode} onReset={resetGame} />
         </div>
-
       </div>
       <IntroText>{intro}</IntroText>
       <SetDone done={hasWon} />
@@ -3749,6 +3802,7 @@ function DotsAndBoxesPage() {
   const [selDot, setSelDot]   = useState<{ r: number; c: number } | null>(null)
   const [hovDot, setHovDot]   = useState<{ r: number; c: number } | null>(null)
   const aiPendingRef = useRef(false)
+  const isLandscape  = useIsLandscape()
 
   const P_COLOR: Record<'X' | 'O', string> = { X: BLUE, O: RED }
   const scoreX   = bBoxes.filter(b => b === 'X').length
@@ -3848,159 +3902,114 @@ function DotsAndBoxesPage() {
       })()
     : []
 
+  const boardSvg = (
+    <svg
+      viewBox={`0 0 ${DB_VB} ${DB_VB}`}
+      preserveAspectRatio="xMidYMid meet"
+      style={{ width: '100%', height: '100%', display: 'block', overflow: 'visible' }}
+    >
+      {bBoxes.map((owner, i) => {
+        if (!owner) return null
+        const r = Math.floor(i / DB_N), c = i % DB_N
+        const { x, y } = dbDp(r, c)
+        return <rect key={i} x={x} y={y} width={DB_VB_CELL} height={DB_VB_CELL} fill={P_COLOR[owner] + '2e'} />
+      })}
+      {hLines.map((owner, i) => {
+        const row = Math.floor(i / DB_N), col = i % DB_N
+        const p1 = dbDp(row, col), p2 = dbDp(row, col + 1)
+        return <line key={`h${i}`} x1={p1.x} y1={p1.y} x2={p2.x} y2={p2.y} stroke={owner ? P_COLOR[owner] : '#ddd'} strokeWidth={owner ? DB_LW : DB_LW_E} strokeLinecap="round" />
+      })}
+      {vLines.map((owner, i) => {
+        const row = Math.floor(i / (DB_N + 1)), col = i % (DB_N + 1)
+        const p1 = dbDp(row, col), p2 = dbDp(row + 1, col)
+        return <line key={`v${i}`} x1={p1.x} y1={p1.y} x2={p2.x} y2={p2.y} stroke={owner ? P_COLOR[owner] : '#ddd'} strokeWidth={owner ? DB_LW : DB_LW_E} strokeLinecap="round" />
+      })}
+      {ghostLines.map(gl => {
+        const p1 = dbDp(selDot!.r, selDot!.c), p2 = dbDp(gl.r2, gl.c2)
+        const isTarget = hovDot?.r === gl.r2 && hovDot?.c === gl.c2
+        return (
+          <line key={`g${gl.isH ? 'h' : 'v'}${gl.idx}`} x1={p1.x} y1={p1.y} x2={p2.x} y2={p2.y}
+            stroke={P_COLOR[current] + (isTarget ? 'cc' : '55')}
+            strokeWidth={isTarget ? DB_LW : DB_LW_E * 1.5} strokeLinecap="round" />
+        )
+      })}
+      {Array.from({ length: DB_N + 1 }, (_, r) =>
+        Array.from({ length: DB_N + 1 }, (_, c) => {
+          const { x, y } = dbDp(r, c)
+          const isSel    = selDot?.r === r && selDot?.c === c
+          const isHov    = hovDot?.r === r && hovDot?.c === c
+          const canClick = isHumanTurn && hasEmptyAdj(r, c)
+          const rr       = isSel ? DB_DOT_SEL : isHov && canClick ? DB_DOT_R * 1.35 : DB_DOT_R
+          const fill     = isSel ? P_COLOR[current] : isHov && canClick ? (selDot ? P_COLOR[current] + 'cc' : '#aaa') : '#ccc'
+          return (
+            <circle key={`d${r}-${c}`} cx={x} cy={y} r={rr} fill={fill}
+              style={{ cursor: canClick ? 'pointer' : 'default', transition: 'r 0.12s, fill 0.12s' }}
+              onClick={() => handleDotClick(r, c)}
+              onMouseEnter={() => setHovDot({ r, c })}
+              onMouseLeave={() => setHovDot(null)}
+            />
+          )
+        })
+      )}
+    </svg>
+  )
+
+  const gameOverOverlay = gameOver && (
+    <div style={{ position: 'absolute', top: '50%', left: '50%', transform: 'translate(-50%, -50%)', zIndex: 10, pointerEvents: 'auto' }}>
+      <div onClick={() => resetGame()} style={{
+        padding: '9px 26px', borderRadius: 30,
+        background: scoreX > scoreO ? BLUE : scoreX < scoreO ? RED : '#222',
+        color: '#fff', fontSize: 15, fontWeight: 700, cursor: 'pointer', fontFamily: 'inherit',
+        boxShadow: '0 4px 20px #0003',
+      }}
+        onMouseDown={e => (e.currentTarget.style.transform = 'scale(0.95)')}
+        onMouseUp={e => (e.currentTarget.style.transform = 'scale(1)')}
+      >
+        {scoreX > scoreO ? '🎉 Play again!' : scoreX < scoreO ? 'Try again!' : '🤝 Play again!'}
+      </div>
+    </div>
+  )
+
+  const controlBorder = '1.5px solid #ede8df'
+
+  if (isLandscape) {
+    return (
+      <>
+        <div style={{ ...ch4CanvasStyle, flex: 1, display: 'flex', flexDirection: 'row', overflow: 'hidden' }}>
+          {/* Left column: turn, score, mode */}
+          <div style={{ flexShrink: 0, display: 'flex', flexDirection: 'column', alignItems: 'flex-start', justifyContent: 'space-between', padding: '24px 20px' }}>
+            <TurnIndicator current={current} gameOver={gameOver} mode={mode} P_COLOR={P_COLOR} isLandscape={true} scores={{ X: scoreX, O: scoreO }} />
+            <ModeSelector mode={mode} onReset={resetGame} />
+          </div>
+          {/* Board */}
+          <div style={{ flex: 1, position: 'relative', display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 16, boxSizing: 'border-box' }}>
+            {boardSvg}
+            {gameOverOverlay}
+          </div>
+        </div>
+        <IntroText>{intro}</IntroText>
+        <SetDone done={hasWon} />
+      </>
+    )
+  }
+
   return (
     <>
-      {/*
-        Layout: flex column so the indicator, board, and mode-switcher divide the
-        canvas naturally. The SVG board sits in a flex:1 area and uses viewBox +
-        preserveAspectRatio="xMidYMid meet" to fill all available space while
-        staying square — zero JS measurement needed.
-      */}
-      <div style={{ ...canvasStyle, display: 'flex', flexDirection: 'column', alignItems: 'center' }}>
-
-        {/* ── Turn / score indicator ── */}
-        <div style={{ flexShrink: 0, width: '100%', paddingTop: 18, paddingBottom: 12, display: 'flex', gap: 48, alignItems: 'center', justifyContent: 'center', fontFamily: 'inherit' }}>
-          {(['X', 'O'] as const).map(p => {
-            const active = current === p && !gameOver
-            const label  = mode === 'computer' ? (p === 'X' ? 'You' : 'Me') : (p === 'X' ? 'Blue' : 'Red')
-            const score  = p === 'X' ? scoreX : scoreO
-            return (
-              <div key={p} style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 6, width: 52 }}>
-                <div style={{ width: 26, height: 26, display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
-                  <div style={{
-                    width: 26, height: 26, borderRadius: '50%', background: P_COLOR[p],
-                    transform: active ? 'scale(1)' : 'scale(0.55)',
-                    opacity: active ? 1 : 0.3,
-                    transition: 'transform 0.2s, opacity 0.2s',
-                  }} />
-                </div>
-                <span style={{ fontSize: 15, lineHeight: '18px', fontWeight: active ? 900 : 500, color: active ? '#111' : '#bbb', fontFamily: 'inherit', transition: 'color 0.2s' }}>
-                  {label}
-                </span>
-                <span style={{ fontSize: 22, lineHeight: '26px', fontWeight: 700, color: P_COLOR[p], fontFamily: 'inherit' }}>
-                  {score}
-                </span>
-                <div style={{ height: 3, width: 28, borderRadius: 2, background: P_COLOR[p], opacity: active ? 1 : 0, transition: 'opacity 0.2s' }} />
-              </div>
-            )
-          })}
+      <div style={{ ...ch4CanvasStyle, flex: 1, display: 'flex', flexDirection: 'column', overflow: 'hidden' }}>
+        {/* Top: turn indicator + score */}
+        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', padding: '14px 16px', flexShrink: 0 }}>
+          <TurnIndicator current={current} gameOver={gameOver} mode={mode} P_COLOR={P_COLOR} isLandscape={false} scores={{ X: scoreX, O: scoreO }} />
         </div>
-
-        {/* ── Board — takes all remaining height ── */}
-        <div style={{ flex: 1, minHeight: 0, width: '100%', display: 'flex', alignItems: 'center', justifyContent: 'center', padding: '0 32px', boxSizing: 'border-box' }}>
-          <svg
-            viewBox={`0 0 ${DB_VB} ${DB_VB}`}
-            preserveAspectRatio="xMidYMid meet"
-            style={{ width: '100%', height: '100%', display: 'block', overflow: 'visible' }}
-          >
-            {/* Box fills */}
-            {bBoxes.map((owner, i) => {
-              if (!owner) return null
-              const r = Math.floor(i / DB_N), c = i % DB_N
-              const { x, y } = dbDp(r, c)
-              return <rect key={i} x={x} y={y} width={DB_VB_CELL} height={DB_VB_CELL} fill={P_COLOR[owner] + '2e'} />
-            })}
-
-            {/* Horizontal lines */}
-            {hLines.map((owner, i) => {
-              const row = Math.floor(i / DB_N), col = i % DB_N
-              const p1 = dbDp(row, col), p2 = dbDp(row, col + 1)
-              return (
-                <line key={`h${i}`} x1={p1.x} y1={p1.y} x2={p2.x} y2={p2.y}
-                  stroke={owner ? P_COLOR[owner] : '#ddd'}
-                  strokeWidth={owner ? DB_LW : DB_LW_E} strokeLinecap="round" />
-              )
-            })}
-
-            {/* Vertical lines */}
-            {vLines.map((owner, i) => {
-              const row = Math.floor(i / (DB_N + 1)), col = i % (DB_N + 1)
-              const p1 = dbDp(row, col), p2 = dbDp(row + 1, col)
-              return (
-                <line key={`v${i}`} x1={p1.x} y1={p1.y} x2={p2.x} y2={p2.y}
-                  stroke={owner ? P_COLOR[owner] : '#ddd'}
-                  strokeWidth={owner ? DB_LW : DB_LW_E} strokeLinecap="round" />
-              )
-            })}
-
-            {/* Ghost lines from the selected dot */}
-            {ghostLines.map(gl => {
-              const p1 = dbDp(selDot!.r, selDot!.c), p2 = dbDp(gl.r2, gl.c2)
-              const isTarget = hovDot?.r === gl.r2 && hovDot?.c === gl.c2
-              return (
-                <line key={`g${gl.isH ? 'h' : 'v'}${gl.idx}`} x1={p1.x} y1={p1.y} x2={p2.x} y2={p2.y}
-                  stroke={P_COLOR[current] + (isTarget ? 'cc' : '55')}
-                  strokeWidth={isTarget ? DB_LW : DB_LW_E * 1.5}
-                  strokeLinecap="round" />
-              )
-            })}
-
-            {/* Dots — rendered last so they sit above lines */}
-            {Array.from({ length: DB_N + 1 }, (_, r) =>
-              Array.from({ length: DB_N + 1 }, (_, c) => {
-                const { x, y } = dbDp(r, c)
-                const isSel    = selDot?.r === r && selDot?.c === c
-                const isHov    = hovDot?.r === r && hovDot?.c === c
-                const canClick = isHumanTurn && hasEmptyAdj(r, c)
-                const rr       = isSel ? DB_DOT_SEL : isHov && canClick ? DB_DOT_R * 1.35 : DB_DOT_R
-                const fill     = isSel
-                  ? P_COLOR[current]
-                  : isHov && canClick
-                    ? (selDot ? P_COLOR[current] + 'cc' : '#aaa')
-                    : '#ccc'
-                return (
-                  <circle key={`d${r}-${c}`} cx={x} cy={y} r={rr}
-                    fill={fill}
-                    style={{ cursor: canClick ? 'pointer' : 'default', transition: 'r 0.12s, fill 0.12s' }}
-                    onClick={() => handleDotClick(r, c)}
-                    onMouseEnter={() => setHovDot({ r, c })}
-                    onMouseLeave={() => setHovDot(null)}
-                  />
-                )
-              })
-            )}
-
-          </svg>
+        {/* Middle: board */}
+        <div style={{ flex: 1, position: 'relative', display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 16, boxSizing: 'border-box' }}>
+          {boardSvg}
+          {gameOverOverlay}
         </div>
-
-        {/* ── Mode switcher ── */}
-        <div style={{ flexShrink: 0, paddingTop: 8, paddingBottom: 16 }}>
-          <div style={{ display: 'flex', border: '1.5px solid #e8e8e8', borderRadius: 30, overflow: 'hidden' }}>
-            {(['computer', 'two-player'] as const).map(m => (
-              <button key={m} onClick={() => resetGame(m)} style={{
-                padding: '5px 16px',
-                background: mode === m ? '#ddd' : 'transparent',
-                color: mode === m ? '#555' : '#bbb',
-                border: 'none', fontSize: 11, fontWeight: mode === m ? 700 : 400,
-                cursor: mode === m ? 'default' : 'pointer',
-                fontFamily: 'inherit',
-                transition: 'background 0.15s, color 0.15s',
-              }}>
-                {m === 'computer' ? 'vs Computer' : '2 Players'}
-              </button>
-            ))}
-          </div>
+        {/* Bottom: mode switch */}
+        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', padding: '12px 16px', flexShrink: 0 }}>
+          <ModeSelector mode={mode} onReset={resetGame} />
         </div>
-
       </div>
-
-      {/* Game-over overlay — shown on top of everything */}
-      {gameOver && (
-        <div style={{ position: 'absolute', top: '50%', left: '50%', transform: 'translate(-50%, -50%)', zIndex: 10, pointerEvents: 'auto' }}>
-          <div onClick={() => resetGame()} style={{
-            padding: '9px 26px', borderRadius: 30,
-            background: scoreX > scoreO ? BLUE : scoreX < scoreO ? RED : '#222',
-            color: '#fff', fontSize: 15, fontWeight: 700, cursor: 'pointer', fontFamily: 'inherit',
-            boxShadow: '0 4px 20px #0003',
-          }}
-            onMouseDown={e => (e.currentTarget.style.transform = 'scale(0.95)')}
-            onMouseUp={e => (e.currentTarget.style.transform = 'scale(1)')}
-          >
-            {scoreX > scoreO ? '🎉 Play again!' : scoreX < scoreO ? 'Try again!' : '🤝 Play again!'}
-          </div>
-        </div>
-      )}
-
       <IntroText>{intro}</IntroText>
       <SetDone done={hasWon} />
     </>
@@ -4031,6 +4040,10 @@ export default function PressHere() {
   const handoffRef     = useRef<Handoff>({ page4Dots: null, page5Dots: null, page6Dots: null, ch2p2Dots: null, ch2LatestDots: null })
   const canvasAreaRef  = useRef<HTMLDivElement>(null)
   const firstRenderRef = useRef(true)
+
+  const vw = useWindowWidth()
+  const isMobile = vw < 480
+  const dotSize  = Math.max(36, Math.min(80, Math.floor(vw * 0.12)))
 
   const activePages = chapter === 1 ? CHAPTER1_PAGES : chapter === 2 ? CHAPTER2_PAGES : chapter === 3 ? CHAPTER3_PAGES : CHAPTER4_PAGES
   const TOTAL = activePages.length
@@ -4138,36 +4151,46 @@ export default function PressHere() {
       <DoneCtx.Provider value={setDone}>
         <HandoffCtx.Provider value={handoffRef}>
           <div style={{
-            height: '100dvh', display: 'flex', flexDirection: 'column',
-            background: '#fef9f0', padding: '12px 32px 16px', boxSizing: 'border-box',
-            fontFamily: '"Nunito Variable", Nunito, sans-serif', overflow: 'hidden',
+            height: '100dvh',
+            background: '#fef9f0',
+            display: 'flex',
+            justifyContent: 'center',
+            overflow: 'hidden',
+            fontFamily: '"Nunito Variable", Nunito, sans-serif',
             userSelect: 'none',
             WebkitUserSelect: 'none',
             WebkitTouchCallout: 'none',
             touchAction: 'manipulation',
           }}>
+          <DotSizeCtx.Provider value={dotSize}>
+          <div style={{
+            width: '100%', maxWidth: 1280,
+            display: 'flex', flexDirection: 'column',
+            padding: 'clamp(8px,1.5vw,12px) clamp(12px,3vw,32px) clamp(6px,1.5vw,16px)',
+            boxSizing: 'border-box',
+          }}>
 
             {/* ── Header: title + chapter / replay pills ── */}
-            <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', minWidth: 960, marginBottom: 10 }}>
+            <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: isMobile ? 6 : 10 }}>
               {/* Title with coloured dots */}
-              <div style={{ display: 'flex', alignItems: 'center', gap: 7, fontSize: 22, fontWeight: 700, color: '#222', letterSpacing: -0.3, fontFamily: 'inherit' }}>
-                <span style={{ width: 10, height: 10, borderRadius: '50%', background: RED,    flexShrink: 0, display: 'inline-block' }} />
+              <div style={{ display: 'flex', alignItems: 'center', gap: 6, fontSize: 'clamp(15px,3vw,22px)', fontWeight: 700, color: '#222', letterSpacing: -0.3, fontFamily: 'inherit' }}>
+                <span style={{ width: 'clamp(7px,1.2vw,10px)', height: 'clamp(7px,1.2vw,10px)', borderRadius: '50%', background: RED,    flexShrink: 0, display: 'inline-block' }} />
                 Press
-                <span style={{ width: 10, height: 10, borderRadius: '50%', background: YELLOW, flexShrink: 0, display: 'inline-block' }} />
+                <span style={{ width: 'clamp(7px,1.2vw,10px)', height: 'clamp(7px,1.2vw,10px)', borderRadius: '50%', background: YELLOW, flexShrink: 0, display: 'inline-block' }} />
                 here
-                <span style={{ width: 10, height: 10, borderRadius: '50%', background: BLUE,   flexShrink: 0, display: 'inline-block' }} />
+                <span style={{ width: 'clamp(7px,1.2vw,10px)', height: 'clamp(7px,1.2vw,10px)', borderRadius: '50%', background: BLUE,   flexShrink: 0, display: 'inline-block' }} />
               </div>
               {/* Chapter pills + Replay */}
-              <div style={{ display: 'flex', gap: 6, alignItems: 'center' }}>
+              <div style={{ display: 'flex', gap: isMobile ? 4 : 6, alignItems: 'center' }}>
                 {([1, 2, 3, 4] as const).map(ch => (
                   <button
                     key={ch}
                     onClick={() => ch === 1 ? reset() : ch === 2 ? startChapter2() : ch === 3 ? startChapter3() : startChapter4()}
                     style={{
-                      padding: '4px 14px', borderRadius: 20,
+                      padding: isMobile ? '3px 8px' : '4px 14px', borderRadius: 20,
                       background: chapter === ch ? '#333' : 'transparent',
                       border: `1.5px solid ${chapter === ch ? '#333' : '#ddd'}`,
-                      fontSize: 12, fontWeight: 700, letterSpacing: '0.02em',
+                      fontSize: isMobile ? 11 : 12, fontWeight: 700, letterSpacing: '0.02em',
                       color: chapter === ch ? '#fff' : '#bbb',
                       fontFamily: 'inherit',
                       cursor: chapter === ch ? 'default' : 'pointer',
@@ -4176,14 +4199,14 @@ export default function PressHere() {
                     onMouseEnter={e => { if (chapter !== ch) { e.currentTarget.style.borderColor = '#aaa'; e.currentTarget.style.color = '#666' } }}
                     onMouseLeave={e => { if (chapter !== ch) { e.currentTarget.style.borderColor = '#ddd'; e.currentTarget.style.color = '#bbb' } }}
                   >
-                    Ch {ch}
+                    {isMobile ? ch : `Ch ${ch}`}
                   </button>
                 ))}
                 <button
                   onClick={replayChapter}
                   title="Replay this chapter"
                   style={{
-                    width: 30, height: 30, borderRadius: 20, padding: 0,
+                    width: isMobile ? 26 : 30, height: isMobile ? 26 : 30, borderRadius: 20, padding: 0,
                     background: 'transparent', border: '1.5px solid #ddd',
                     color: '#bbb', fontFamily: 'inherit', cursor: 'pointer',
                     display: 'flex', alignItems: 'center', justifyContent: 'center',
@@ -4192,13 +4215,13 @@ export default function PressHere() {
                   onMouseEnter={e => { e.currentTarget.style.borderColor = '#aaa'; e.currentTarget.style.color = '#666' }}
                   onMouseLeave={e => { e.currentTarget.style.borderColor = '#ddd'; e.currentTarget.style.color = '#bbb' }}
                 >
-                  <RotateCcw size={13} strokeWidth={2.5} />
+                  <RotateCcw size={isMobile ? 11 : 13} strokeWidth={2.5} />
                 </button>
               </div>
             </div>
 
-            {/* Canvas area — all pages mounted; opacity+pointer-events for transition */}
-            <div ref={canvasAreaRef} key={globalKey} style={{ flex: 1, minHeight: 0, position: 'relative', minWidth: 960 }}>
+            {/* Canvas area — all pages mounted; display toggled for active page */}
+            <div ref={canvasAreaRef} key={globalKey} style={{ flex: 1, minHeight: 0, position: 'relative' }}>
               {activePages.map((P, i) => (
                 <PageActiveCtx.Provider key={i} value={i === page}>
                   <div style={{
@@ -4211,18 +4234,18 @@ export default function PressHere() {
             </div>
 
             {/* Caption row — caption left-aligned, Next button pinned to the right */}
-            <div style={{ position: 'relative', display: 'flex', alignItems: 'center', justifyContent: 'flex-start', minWidth: 960, marginTop: 14, minHeight: 46 }}>
-              <div style={{ fontSize: 'clamp(14px,2vw,18px)', fontWeight: 600, color: '#444', lineHeight: 1.4, maxWidth: 'calc(100% - 260px)' }}>
+            <div style={{ position: 'relative', display: 'flex', alignItems: 'center', justifyContent: 'flex-start', marginTop: isMobile ? 8 : 14, minHeight: isMobile ? 38 : 46 }}>
+              <div style={{ fontSize: 'clamp(13px,2vw,18px)', fontWeight: 600, color: '#444', lineHeight: 1.4, maxWidth: 'calc(100% - 190px)' }}>
                 {caption}
               </div>
               <button
                 onClick={isLast ? () => setWellDone(true) : () => nav(page + 1)}
                 style={{
                   position: 'absolute', right: 0,
-                  display: 'flex', alignItems: 'center', gap: 8,
-                  padding: '10px 28px', borderRadius: 40,
+                  display: 'flex', alignItems: 'center', gap: isMobile ? 4 : 8,
+                  padding: isMobile ? '7px 16px' : '10px 28px', borderRadius: 40,
                   background: '#FDD302', border: 'none',
-                  fontSize: 20, fontWeight: 800, color: '#333',
+                  fontSize: isMobile ? 16 : 20, fontWeight: 800, color: '#333',
                   fontFamily: 'inherit', cursor: 'pointer',
                   flexShrink: 0,
                   visibility: done ? 'visible' : 'hidden',
@@ -4232,12 +4255,12 @@ export default function PressHere() {
                 onMouseDown={e => (e.currentTarget.style.transform = 'scale(0.96)')}
                 onMouseUp={e => (e.currentTarget.style.transform = 'scale(1)')}
               >
-                {isLast ? 'Done' : <>Next <ChevronRight size={22} strokeWidth={3} /></>}
+                {isLast ? 'Done' : <>Next <ChevronRight size={isMobile ? 17 : 22} strokeWidth={3} /></>}
               </button>
             </div>
 
             {/* Footer — dot pagination */}
-            <div style={{ display: 'flex', justifyContent: 'center', alignItems: 'center', minWidth: 960, marginTop: 10, gap: 7 }}>
+            <div style={{ display: 'flex', justifyContent: 'center', alignItems: 'center', marginTop: isMobile ? 6 : 10, gap: 7 }}>
               {Array.from({ length: TOTAL }, (_, i) => (
                 <button
                   key={i}
@@ -4255,6 +4278,8 @@ export default function PressHere() {
               ))}
             </div>
 
+          </div>
+          </DotSizeCtx.Provider>
           </div>
         </HandoffCtx.Provider>
       </DoneCtx.Provider>
