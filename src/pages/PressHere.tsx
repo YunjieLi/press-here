@@ -1,5 +1,4 @@
 import { useState, useRef, useEffect, useLayoutEffect, createContext, useContext, useMemo } from 'react'
-import { useNavigate, useParams } from 'react-router-dom'
 import '@fontsource-variable/nunito'
 import { ChevronRight, RotateCcw } from 'lucide-react'
 import { Button } from '@/components/ui/button'
@@ -3801,9 +3800,26 @@ function DotsAndBoxesPage() {
   const [current, setCurrent] = useState<'X' | 'O'>('X')
   const [hasWon, setHasWon]   = useState(false)
   const [selDot, setSelDot]   = useState<{ r: number; c: number } | null>(null)
-  const [hovDot, setHovDot]   = useState<{ r: number; c: number } | null>(null)
+  const [dragPt, setDragPt]   = useState<{ x: number; y: number } | null>(null)
+  const dbSvgRef = useRef<SVGSVGElement>(null)
   const aiPendingRef = useRef(false)
   const isLandscape  = useIsLandscape()
+
+  function toDBSVGPt(e: React.PointerEvent) {
+    const svg = dbSvgRef.current; if (!svg) return null
+    const p = svg.createSVGPoint(); p.x = e.clientX; p.y = e.clientY
+    return p.matrixTransform(svg.getScreenCTM()!.inverse())
+  }
+  function nearestDBDot(pt: { x: number; y: number }, thresh: number) {
+    let best: { r: number; c: number } | null = null, bestD = thresh
+    for (let r = 0; r <= DB_N; r++)
+      for (let c = 0; c <= DB_N; c++) {
+        const dp = dbDp(r, c)
+        const d = Math.hypot(dp.x - pt.x, dp.y - pt.y)
+        if (d < bestD) { bestD = d; best = { r, c } }
+      }
+    return best
+  }
 
   const P_COLOR: Record<'X' | 'O', string> = { X: BLUE, O: RED }
   const scoreX   = bBoxes.filter(b => b === 'X').length
@@ -3811,7 +3827,7 @@ function DotsAndBoxesPage() {
   const gameOver = bBoxes.every(b => b !== null)
 
   const intro: React.ReactNode =
-    !gameOver ? 'Click a dot, then click an adjacent dot to draw a line!'
+    !gameOver ? 'Drag from a dot to an adjacent dot to draw a line!'
     : scoreX > scoreO ? (mode === 'computer' ? 'You win! 🎉' : 'Blue wins! 🎉')
     : scoreX < scoreO ? (mode === 'computer' ? 'I win! Try again?' : 'Red wins! Try again?')
     : "It's a draw!"
@@ -3850,7 +3866,7 @@ function DotsAndBoxesPage() {
   function resetGame(newMode?: TTTMode) {
     setMode(newMode ?? mode)
     setHLines(dbMkH()); setVLines(dbMkV()); setBBoxes(dbMkB())
-    setCurrent('X'); setHasWon(false); setSelDot(null); setHovDot(null)
+    setCurrent('X'); setHasWon(false); setSelDot(null); setDragPt(null)
     aiPendingRef.current = false
   }
 
@@ -3859,7 +3875,7 @@ function DotsAndBoxesPage() {
     const res  = dbApply(hLines, vLines, bBoxes, isH, idx, current)
     const next: 'X' | 'O' = res.extra ? current : (current === 'X' ? 'O' : 'X')
     setHLines(res.h); setVLines(res.v); setBBoxes(res.boxes); setCurrent(next)
-    setSelDot(null)
+    setSelDot(null); setDragPt(null)
 
     if (mode === 'computer' && next === 'O') {
       aiPendingRef.current = true
@@ -3878,36 +3894,34 @@ function DotsAndBoxesPage() {
 
   const isHumanTurn = !gameOver && !aiPendingRef.current && (mode === 'two-player' || current === 'X')
 
-  function handleDotClick(r: number, c: number) {
-    if (!isHumanTurn) return
-    if (!selDot) {
-      if (hasEmptyAdj(r, c)) setSelDot({ r, c })
-      return
-    }
-    if (selDot.r === r && selDot.c === c) { setSelDot(null); return }
-    const line = adjacentLine(selDot.r, selDot.c, r, c)
-    if (line) { commitLine(line.isH, line.idx); return }
-    if (hasEmptyAdj(r, c)) setSelDot({ r, c })
-    else setSelDot(null)
-  }
-
-  // Ghost lines radiating from the selected dot to all valid empty neighbors
-  const ghostLines: { isH: boolean; idx: number; r2: number; c2: number }[] = selDot
-    ? (() => {
-        const { r, c } = selDot
-        return [{ r: r-1, c }, { r: r+1, c }, { r, c: c-1 }, { r, c: c+1 }].flatMap(nb => {
-          if (nb.r < 0 || nb.r > DB_N || nb.c < 0 || nb.c > DB_N) return []
-          const line = adjacentLine(r, c, nb.r, nb.c)
-          return line ? [{ ...line, r2: nb.r, c2: nb.c }] : []
-        })
-      })()
-    : []
+  // Drag snap: nearest dot within 40% of cell width to the drag pointer
+  const snapTarget = selDot && dragPt ? nearestDBDot(dragPt, DB_VB_CELL * 0.5) : null
+  const snapIsValid = snapTarget && selDot && snapTarget !== selDot &&
+    adjacentLine(selDot.r, selDot.c, snapTarget.r, snapTarget.c) !== null
 
   const boardSvg = (
     <svg
+      ref={dbSvgRef}
       viewBox={`0 0 ${DB_VB} ${DB_VB}`}
       preserveAspectRatio="xMidYMid meet"
-      style={{ width: '100%', height: '100%', display: 'block', overflow: 'visible' }}
+      style={{ width: '100%', height: '100%', display: 'block', overflow: 'visible', touchAction: 'none' }}
+      onPointerMove={e => {
+        if (!selDot) return
+        const pt = toDBSVGPt(e); if (pt) setDragPt({ x: pt.x, y: pt.y })
+      }}
+      onPointerUp={e => {
+        if (!selDot) return
+        const pt = toDBSVGPt(e)
+        if (pt) {
+          const dot = nearestDBDot(pt, DB_VB_CELL * 0.55)
+          if (dot && !(dot.r === selDot.r && dot.c === selDot.c)) {
+            const line = adjacentLine(selDot.r, selDot.c, dot.r, dot.c)
+            if (line) { commitLine(line.isH, line.idx); return }
+          }
+        }
+        setSelDot(null); setDragPt(null)
+      }}
+      onPointerLeave={() => { setSelDot(null); setDragPt(null) }}
     >
       {bBoxes.map((owner, i) => {
         if (!owner) return null
@@ -3925,29 +3939,34 @@ function DotsAndBoxesPage() {
         const p1 = dbDp(row, col), p2 = dbDp(row + 1, col)
         return <line key={`v${i}`} x1={p1.x} y1={p1.y} x2={p2.x} y2={p2.y} stroke={owner ? P_COLOR[owner] : '#ddd'} strokeWidth={owner ? DB_LW : DB_LW_E} strokeLinecap="round" />
       })}
-      {ghostLines.map(gl => {
-        const p1 = dbDp(selDot!.r, selDot!.c), p2 = dbDp(gl.r2, gl.c2)
-        const isTarget = hovDot?.r === gl.r2 && hovDot?.c === gl.c2
+      {/* Drag line from selDot to pointer (snapping to valid neighbor) */}
+      {selDot && dragPt && (() => {
+        const p1 = dbDp(selDot.r, selDot.c)
+        const p2 = snapIsValid ? dbDp(snapTarget!.r, snapTarget!.c) : dragPt
         return (
-          <line key={`g${gl.isH ? 'h' : 'v'}${gl.idx}`} x1={p1.x} y1={p1.y} x2={p2.x} y2={p2.y}
-            stroke={P_COLOR[current] + (isTarget ? 'cc' : '55')}
-            strokeWidth={isTarget ? DB_LW : DB_LW_E * 1.5} strokeLinecap="round" />
+          <line x1={p1.x} y1={p1.y} x2={p2.x} y2={p2.y}
+            stroke={P_COLOR[current] + (snapIsValid ? 'cc' : '55')}
+            strokeWidth={snapIsValid ? DB_LW : DB_LW_E * 1.5}
+            strokeLinecap="round" strokeDasharray={snapIsValid ? 'none' : '8 4'} />
         )
-      })}
+      })()}
       {Array.from({ length: DB_N + 1 }, (_, r) =>
         Array.from({ length: DB_N + 1 }, (_, c) => {
           const { x, y } = dbDp(r, c)
-          const isSel    = selDot?.r === r && selDot?.c === c
-          const isHov    = hovDot?.r === r && hovDot?.c === c
-          const canClick = isHumanTurn && hasEmptyAdj(r, c)
-          const rr       = isSel ? DB_DOT_SEL : isHov && canClick ? DB_DOT_R * 1.35 : DB_DOT_R
-          const fill     = isSel ? P_COLOR[current] : isHov && canClick ? (selDot ? P_COLOR[current] + 'cc' : '#aaa') : '#ccc'
+          const isSel  = selDot?.r === r && selDot?.c === c
+          const isSnap = snapIsValid && snapTarget?.r === r && snapTarget?.c === c
+          const canDrag = isHumanTurn && hasEmptyAdj(r, c)
+          const rr   = isSel || isSnap ? DB_DOT_SEL : DB_DOT_R
+          const fill = isSel ? P_COLOR[current] : isSnap ? P_COLOR[current] + 'cc' : '#ccc'
           return (
             <circle key={`d${r}-${c}`} cx={x} cy={y} r={rr} fill={fill}
-              style={{ cursor: canClick ? 'pointer' : 'default', transition: 'r 0.12s, fill 0.12s' }}
-              onClick={() => handleDotClick(r, c)}
-              onMouseEnter={() => setHovDot({ r, c })}
-              onMouseLeave={() => setHovDot(null)}
+              style={{ cursor: canDrag ? 'grab' : 'default', transition: 'r 0.1s, fill 0.1s' }}
+              onPointerDown={e => {
+                if (!canDrag) return
+                e.currentTarget.setPointerCapture(e.pointerId)
+                setSelDot({ r, c })
+                const pt = toDBSVGPt(e); if (pt) setDragPt({ x: pt.x, y: pt.y })
+              }}
             />
           )
         })
@@ -4028,32 +4047,275 @@ function Ch3Page2L3() { return <Ch3Page2 winTarget={C3P2_WIN3} variant="hard" />
 function Ch3Page3L3() { return <Ch3Page3 winTarget={C3P3_WIN_DIST3} variant="hard" /> }
 
 const CHAPTER3_PAGES = [Ch3Page1, Ch3Page1L2, Ch3Page1L3, Ch3Page2, Ch3Page2L2, Ch3Page2L3, Ch3Page3, Ch3Page3L2, Ch3Page3L3]
-const CHAPTER4_PAGES: React.ComponentType[] = [TicTacToePage, DotsAndBoxesPage]
+// ─── Chapter 4 / Page 3: Cat and Mouse ────────────────────────────────────────
+
+// Pentagon + center graph (6 nodes)
+const CM_NODES = [
+  { x: 50, y: 18 },  // 0 top          → 🐱 cat starts
+  { x: 78, y: 38 },  // 1 upper-right
+  { x: 67, y: 69 },  // 2 lower-right
+  { x: 33, y: 69 },  // 3 lower-left
+  { x: 22, y: 38 },  // 4 upper-left
+  { x: 50, y: 49 },  // 5 center       → 🐭 mouse starts
+]
+
+const CM_EDGES: [number, number][] = [
+  [0,1],[1,2],[2,3],[3,4],[4,0],  // pentagon
+  [5,0],[5,2],[5,3],              // inner connections from center
+]
+
+const CM_ADJ: number[][] = Array.from({ length: CM_NODES.length }, (_, i) =>
+  CM_EDGES.flatMap(([a,b]) => a===i ? [b] : b===i ? [a] : [])
+)
+
+function cmBestCatMove(cat: number, mouse: number): number {
+  if (CM_ADJ[cat].includes(mouse)) return mouse
+  const q: number[][] = CM_ADJ[cat].map(n => [cat, n])
+  const vis = new Set([cat, ...CM_ADJ[cat]])
+  while (q.length) {
+    const path = q.shift()!
+    const cur = path[path.length - 1]
+    for (const nxt of CM_ADJ[cur]) {
+      if (nxt === mouse) return path[1]
+      if (!vis.has(nxt)) { vis.add(nxt); q.push([...path, nxt]) }
+    }
+  }
+  return CM_ADJ[cat][0]
+}
+
+function CatMousePage() {
+  const isLandscape = useIsLandscape()
+  const [mode,     setMode]     = useState<TTTMode>('computer')
+  const [catPos,   setCatPos]   = useState(0)
+  const [mousePos, setMousePos] = useState(5)
+  const [turn,     setTurn]     = useState<'mouse'|'cat'>('mouse')
+  const [gameOver, setGameOver] = useState(false)
+  const [dragFrom, setDragFrom] = useState<number|null>(null)
+  const [dragPt,   setDragPt]   = useState<{x:number;y:number}|null>(null)
+  const svgRef = useRef<SVGSVGElement>(null)
+
+  const CAT_COLOR   = RED
+  const MOUSE_COLOR = BLUE
+
+  function resetGame(m: TTTMode = mode) {
+    setMode(m); setCatPos(0); setMousePos(5)
+    setTurn('mouse'); setGameOver(false)
+    setDragFrom(null); setDragPt(null)
+  }
+
+  // Computer cat makes its move
+  useEffect(() => {
+    if (mode !== 'computer' || turn !== 'cat' || gameOver) return
+    const t = setTimeout(() => {
+      const next = cmBestCatMove(catPos, mousePos)
+      setCatPos(next)
+      if (next === mousePos) setGameOver(true)
+      else setTurn('mouse')
+    }, 500)
+    return () => clearTimeout(t)
+  }, [mode, turn, gameOver, catPos, mousePos])
+
+  function doMove(to: number) {
+    if (gameOver) return
+    const myPos = turn === 'mouse' ? mousePos : catPos
+    if (!CM_ADJ[myPos].includes(to)) return
+    if (turn === 'mouse') {
+      setMousePos(to)
+      if (to === catPos) { setGameOver(true); return }
+      setTurn('cat')
+    } else {
+      setCatPos(to)
+      if (to === mousePos) { setGameOver(true); return }
+      setTurn('mouse')
+    }
+  }
+
+  function toSVGPt(e: React.PointerEvent) {
+    const svg = svgRef.current; if (!svg) return null
+    const p = svg.createSVGPoint()
+    p.x = e.clientX; p.y = e.clientY
+    return p.matrixTransform(svg.getScreenCTM()!.inverse())
+  }
+
+  function nearestValid(pt: {x:number;y:number}, candidates: number[], thresh = 16) {
+    let best: number|null = null, bestD = thresh
+    for (const i of candidates) {
+      const d = Math.hypot(CM_NODES[i].x - pt.x, CM_NODES[i].y - pt.y)
+      if (d < bestD) { bestD = d; best = i }
+    }
+    return best
+  }
+
+  const isMyTurn   = !gameOver && (mode === 'two-player' || turn === 'mouse')
+  const myPos      = turn === 'mouse' ? mousePos : catPos
+  const validMoves = isMyTurn ? CM_ADJ[myPos] : []
+  const NR = 5 // node radius in SVG viewBox units (smaller)
+
+  // ── SVG board ──────────────────────────────────────────────────────────────
+  const svgBoard = (
+    <svg
+      ref={svgRef}
+      viewBox="0 0 100 100"
+      style={{ width: '100%', height: '100%', touchAction: 'none', overflow: 'visible' }}
+      onPointerMove={e => {
+        if (dragFrom === null) return
+        const pt = toSVGPt(e); if (pt) setDragPt({ x: pt.x, y: pt.y })
+      }}
+      onPointerUp={e => {
+        if (dragFrom === null) return
+        const pt = toSVGPt(e)
+        if (pt) {
+          const target = nearestValid(pt, validMoves)
+          if (target !== null) doMove(target)
+        }
+        setDragFrom(null); setDragPt(null)
+      }}
+      onPointerLeave={() => { setDragFrom(null); setDragPt(null) }}
+    >
+      {/* Edges */}
+      {CM_EDGES.map(([a, b], i) => (
+        <line key={i}
+          x1={CM_NODES[a].x} y1={CM_NODES[a].y}
+          x2={CM_NODES[b].x} y2={CM_NODES[b].y}
+          stroke="#d0d0d0" strokeWidth={1.5} strokeLinecap="round"
+        />
+      ))}
+
+      {/* Empty nodes — plain, no valid-move highlighting */}
+      {CM_NODES.map((n, i) => {
+        if (i === catPos || i === mousePos) return null
+        const isTarget = validMoves.includes(i)
+        return (
+          <circle key={i} cx={n.x} cy={n.y} r={NR}
+            fill="#e0e0e0" stroke="#ccc" strokeWidth={1}
+            style={{ cursor: isTarget ? 'pointer' : 'default' }}
+            onClick={() => { if (isTarget && dragFrom === null) doMove(i) }}
+          />
+        )
+      })}
+
+      {/* Drag line */}
+      {dragFrom !== null && dragPt && (
+        <line
+          x1={CM_NODES[dragFrom].x} y1={CM_NODES[dragFrom].y}
+          x2={dragPt.x} y2={dragPt.y}
+          stroke={turn === 'mouse' ? MOUSE_COLOR : CAT_COLOR} strokeWidth={2} strokeLinecap="round" opacity={0.75}
+        />
+      )}
+
+      {/* Pieces: mouse first so cat renders on top */}
+      {[
+        { id: 'mouse', pos: mousePos, emoji: '🐭', color: MOUSE_COLOR, isTurn: turn === 'mouse' },
+        { id: 'cat',   pos: catPos,   emoji: '🐱', color: CAT_COLOR,   isTurn: turn === 'cat'   },
+      ].map(({ id, pos, emoji, color, isTurn }) => {
+        const isDragging = dragFrom === pos
+        const n = isDragging && dragPt ? dragPt : CM_NODES[pos]
+        const canDrag = isMyTurn && isTurn && (id === 'mouse' || mode === 'two-player')
+        return (
+          <g key={id} transform={`translate(${n.x},${n.y})`}
+             style={{ cursor: canDrag ? 'grab' : 'default' }}
+             onPointerDown={e => {
+               if (!canDrag) return
+               e.currentTarget.setPointerCapture(e.pointerId)
+               setDragFrom(pos)
+               const pt = toSVGPt(e); if (pt) setDragPt({ x: pt.x, y: pt.y })
+             }}>
+            <circle r={NR + 1} fill={color}
+              style={{ filter: 'drop-shadow(0 2px 4px rgba(0,0,0,0.2))' }}
+            />
+            <text textAnchor="middle" dominantBaseline="central"
+              fontSize={8} style={{ pointerEvents: 'none', userSelect: 'none' }}>
+              {emoji}
+            </text>
+          </g>
+        )
+      })}
+    </svg>
+  )
+
+  // ── Game-over overlay ──────────────────────────────────────────────────────
+  const gameOverOverlay = gameOver ? (
+    <div style={{
+      position: 'absolute', inset: 0,
+      display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center',
+      gap: 14, background: 'rgba(255,255,255,0.88)', borderRadius: 16,
+    }}>
+      <div style={{ fontSize: 52 }}>🐱</div>
+      <div style={{ fontSize: 22, fontWeight: 800, color: '#222', fontFamily: 'inherit' }}>Cat wins!</div>
+      <button onClick={() => resetGame()} style={{
+        padding: '8px 28px', borderRadius: 30, background: CAT_COLOR, border: 'none',
+        color: '#fff', fontSize: 15, fontWeight: 700, cursor: 'pointer', fontFamily: 'inherit',
+      }}>Play Again</button>
+    </div>
+  ) : null
+
+  const CM_P_COLOR: Record<'X'|'O', string> = { X: MOUSE_COLOR, O: CAT_COLOR }
+  const modeSelector = <ModeSelector mode={mode} onReset={resetGame} />
+  const intro = gameOver ? '🐱 Cat wins!'
+    : turn === 'mouse' ? (mode === 'computer' ? 'Your turn! Drag 🐭 to move' : "Mouse's turn — drag to move")
+    : (mode === 'computer' ? '🐱 Cat is thinking…' : "Cat's turn — drag to move")
+
+  if (isLandscape) {
+    return (
+      <>
+        <div style={{ ...ch4CanvasStyle, flex: 1, display: 'flex', flexDirection: 'row', overflow: 'hidden' }}>
+          <div style={{ flexShrink: 0, display: 'flex', flexDirection: 'column', alignItems: 'flex-start', justifyContent: 'space-between', padding: '24px 20px' }}>
+            <TurnIndicator current={turn === 'mouse' ? 'X' : 'O'} gameOver={gameOver} mode={mode} P_COLOR={CM_P_COLOR} isLandscape={true} />
+            {modeSelector}
+          </div>
+          <div style={{ flex: 1, position: 'relative', display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 24, boxSizing: 'border-box' }}>
+            {svgBoard}
+            {gameOverOverlay}
+          </div>
+        </div>
+        <IntroText>{intro}</IntroText>
+      </>
+    )
+  }
+
+  return (
+    <>
+      <div style={{ ...ch4CanvasStyle, flex: 1, display: 'flex', flexDirection: 'column', overflow: 'hidden' }}>
+        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', padding: '14px 16px', flexShrink: 0 }}>
+          <TurnIndicator current={turn === 'mouse' ? 'X' : 'O'} gameOver={gameOver} mode={mode} P_COLOR={CM_P_COLOR} isLandscape={false} />
+        </div>
+        <div style={{ flex: 1, position: 'relative', display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 20, boxSizing: 'border-box' }}>
+          {svgBoard}
+          {gameOverOverlay}
+        </div>
+        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', padding: '12px 16px', flexShrink: 0 }}>
+          {modeSelector}
+        </div>
+      </div>
+      <IntroText>{intro}</IntroText>
+    </>
+  )
+}
+
+const CHAPTER4_PAGES: React.ComponentType[] = [TicTacToePage, DotsAndBoxesPage, CatMousePage]
 
 export default function PressHere() {
-  const { n }        = useParams<{ n: string }>()
-  const navigate     = useNavigate()
-  const chapter      = Math.max(1, Math.min(4, parseInt(n ?? '1', 10)))
-
   const [page,       setPage]      = useState(0)
   const [caption,    setCaption]   = useState<React.ReactNode>('')
   const [done,       setDone]      = useState(false)
   const [globalKey,  setGlobalKey] = useState(0)
   const [wellDone,   setWellDone]  = useState(false)
-  const [replayKey,  setReplayKey] = useState(0)
+  const [chapter,    setChapter]   = useState(() => {
+    const m = window.location.pathname.match(/\/ch(\d+)/)
+    const ch = m ? Math.max(1, Math.min(4, parseInt(m[1], 10))) : 1
+    // Immediately redirect /press-here → /press-here/ch1 (or whichever chapter)
+    window.history.replaceState(null, '', `/press-here/ch${ch}`)
+    return ch
+  })
   const [ch2Shapes,  setCh2Shapes] = useState<ShapeDef[]>(() => pickRandomShapes(7))
   const handoffRef     = useRef<Handoff>({ page4Dots: null, page5Dots: null, page6Dots: null, ch2p2Dots: null, ch2LatestDots: null })
   const canvasAreaRef  = useRef<HTMLDivElement>(null)
   const firstRenderRef = useRef(true)
 
-  // Reset page/state whenever chapter URL or replay changes
+  // Sync chapter to URL without causing a navigation/reload
   useEffect(() => {
-    setGlobalKey(k => k + 1)
-    setPage(0)
-    setDone(false)
-    setWellDone(false)
-    handoffRef.current = { page4Dots: null, page5Dots: null, page6Dots: null, ch2p2Dots: null, ch2LatestDots: null }
-  }, [chapter, replayKey])
+    window.history.replaceState(null, '', `/press-here/ch${chapter}`)
+  }, [chapter])
 
   const vw = useWindowWidth()
   const isMobile = vw < 480
@@ -4069,14 +4331,48 @@ export default function PressHere() {
     setDone(false)
   }
 
-  function reset()         { navigate('/ch1') }
-  function startChapter2() { setCh2Shapes(pickRandomShapes(7)); navigate('/ch2') }
-  function startChapter3() { navigate('/ch3') }
-  function startChapter4() { navigate('/ch4') }
+  function reset() {
+    setGlobalKey(k => k + 1)
+    setPage(0)
+    setDone(false)
+    setWellDone(false)
+    setChapter(1)
+    handoffRef.current = { page4Dots: null, page5Dots: null, page6Dots: null, ch2p2Dots: null, ch2LatestDots: null }
+  }
+
+  function startChapter2() {
+    setCh2Shapes(pickRandomShapes(7))
+    setGlobalKey(k => k + 1)
+    setPage(0)
+    setDone(false)
+    setWellDone(false)
+    setChapter(2)
+    handoffRef.current = { page4Dots: null, page5Dots: null, page6Dots: null, ch2p2Dots: null, ch2LatestDots: null }
+  }
+
+  function startChapter3() {
+    setGlobalKey(k => k + 1)
+    setPage(0)
+    setDone(false)
+    setWellDone(false)
+    setChapter(3)
+    handoffRef.current = { page4Dots: null, page5Dots: null, page6Dots: null, ch2p2Dots: null, ch2LatestDots: null }
+  }
+
+  function startChapter4() {
+    setGlobalKey(k => k + 1)
+    setPage(0)
+    setDone(false)
+    setWellDone(false)
+    setChapter(4)
+    handoffRef.current = { page4Dots: null, page5Dots: null, page6Dots: null, ch2p2Dots: null, ch2LatestDots: null }
+  }
 
   function replayChapter() {
-    if (chapter === 2) setCh2Shapes(pickRandomShapes(7))
-    setReplayKey(k => k + 1)
+    if (chapter === 2) startChapter2()
+    else if (chapter === 3) startChapter3()
+    else if (chapter === 4) startChapter4()
+    else reset()
   }
 
   // Page-change shadow lift animation
