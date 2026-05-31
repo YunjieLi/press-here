@@ -1,4 +1,5 @@
 import { useState, useRef, useEffect, useLayoutEffect, createContext, useContext, useMemo } from 'react'
+import { useNavigate, useParams } from 'react-router-dom'
 import '@fontsource-variable/nunito'
 import { ChevronRight, RotateCcw } from 'lucide-react'
 import { Button } from '@/components/ui/button'
@@ -4030,16 +4031,29 @@ const CHAPTER3_PAGES = [Ch3Page1, Ch3Page1L2, Ch3Page1L3, Ch3Page2, Ch3Page2L2, 
 const CHAPTER4_PAGES: React.ComponentType[] = [TicTacToePage, DotsAndBoxesPage]
 
 export default function PressHere() {
+  const { n }        = useParams<{ n: string }>()
+  const navigate     = useNavigate()
+  const chapter      = Math.max(1, Math.min(4, parseInt(n ?? '1', 10)))
+
   const [page,       setPage]      = useState(0)
   const [caption,    setCaption]   = useState<React.ReactNode>('')
   const [done,       setDone]      = useState(false)
   const [globalKey,  setGlobalKey] = useState(0)
   const [wellDone,   setWellDone]  = useState(false)
-  const [chapter,    setChapter]   = useState(1)
+  const [replayKey,  setReplayKey] = useState(0)
   const [ch2Shapes,  setCh2Shapes] = useState<ShapeDef[]>(() => pickRandomShapes(7))
   const handoffRef     = useRef<Handoff>({ page4Dots: null, page5Dots: null, page6Dots: null, ch2p2Dots: null, ch2LatestDots: null })
   const canvasAreaRef  = useRef<HTMLDivElement>(null)
   const firstRenderRef = useRef(true)
+
+  // Reset page/state whenever chapter URL or replay changes
+  useEffect(() => {
+    setGlobalKey(k => k + 1)
+    setPage(0)
+    setDone(false)
+    setWellDone(false)
+    handoffRef.current = { page4Dots: null, page5Dots: null, page6Dots: null, ch2p2Dots: null, ch2LatestDots: null }
+  }, [chapter, replayKey])
 
   const vw = useWindowWidth()
   const isMobile = vw < 480
@@ -4055,48 +4069,14 @@ export default function PressHere() {
     setDone(false)
   }
 
-  function reset() {
-    setGlobalKey(k => k + 1)
-    setPage(0)
-    setDone(false)
-    setWellDone(false)
-    setChapter(1)
-    handoffRef.current = { page4Dots: null, page5Dots: null, page6Dots: null, ch2p2Dots: null, ch2LatestDots: null }
-  }
-
-  function startChapter2() {
-    setCh2Shapes(pickRandomShapes(7))
-    setGlobalKey(k => k + 1)
-    setPage(0)
-    setDone(false)
-    setWellDone(false)
-    setChapter(2)
-    handoffRef.current = { page4Dots: null, page5Dots: null, page6Dots: null, ch2p2Dots: null, ch2LatestDots: null }
-  }
+  function reset()         { navigate('/ch1') }
+  function startChapter2() { setCh2Shapes(pickRandomShapes(7)); navigate('/ch2') }
+  function startChapter3() { navigate('/ch3') }
+  function startChapter4() { navigate('/ch4') }
 
   function replayChapter() {
-    if (chapter === 2) startChapter2()
-    else if (chapter === 3) startChapter3()
-    else if (chapter === 4) startChapter4()
-    else reset()
-  }
-
-  function startChapter3() {
-    setGlobalKey(k => k + 1)
-    setPage(0)
-    setDone(false)
-    setWellDone(false)
-    setChapter(3)
-    handoffRef.current = { page4Dots: null, page5Dots: null, page6Dots: null, ch2p2Dots: null, ch2LatestDots: null }
-  }
-
-  function startChapter4() {
-    setGlobalKey(k => k + 1)
-    setPage(0)
-    setDone(false)
-    setWellDone(false)
-    setChapter(4)
-    handoffRef.current = { page4Dots: null, page5Dots: null, page6Dots: null, ch2p2Dots: null, ch2LatestDots: null }
+    if (chapter === 2) setCh2Shapes(pickRandomShapes(7))
+    setReplayKey(k => k + 1)
   }
 
   // Page-change shadow lift animation
@@ -4182,7 +4162,7 @@ export default function PressHere() {
               </div>
               {/* Chapter pills + Replay */}
               <div style={{ display: 'flex', gap: isMobile ? 4 : 6, alignItems: 'center' }}>
-                {([1, 2, 3, 4] as const).map(ch => (
+                {([1, 2] as const).map(ch => (
                   <button
                     key={ch}
                     onClick={() => ch === 1 ? reset() : ch === 2 ? startChapter2() : ch === 3 ? startChapter3() : startChapter4()}
