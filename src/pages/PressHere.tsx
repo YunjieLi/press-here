@@ -1,6 +1,6 @@
 import { useState, useRef, useEffect, useLayoutEffect, createContext, useContext, useMemo } from 'react'
 import '@fontsource-variable/nunito'
-import { ChevronRight, RotateCcw } from 'lucide-react'
+import { ChevronRight, RotateCcw, X as LucideX, Circle as LucideCircle } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { Pagination, PaginationContent, PaginationItem, PaginationLink, PaginationNext, PaginationPrevious } from '@/components/ui/pagination'
 import { cn } from '@/lib/utils'
@@ -3430,11 +3430,13 @@ function useIsLandscape(): boolean {
 
 // ─── Ch4 shared components ────────────────────────────────────────────────────
 
-function TurnIndicator({ current, gameOver, mode, P_COLOR, isLandscape, scores }: {
+function TurnIndicator({ current, gameOver, mode, P_COLOR, isLandscape, scores, icons, labels }: {
   current: 'X' | 'O'; gameOver: boolean; mode: TTTMode
   P_COLOR: Record<'X' | 'O', string>
   isLandscape: boolean
   scores?: { X: number; O: number }
+  icons?: { X: React.ReactNode; O: React.ReactNode }
+  labels?: { X: string; O: string }
 }) {
   return (
     <div style={{
@@ -3445,18 +3447,19 @@ function TurnIndicator({ current, gameOver, mode, P_COLOR, isLandscape, scores }
     }}>
       {(['X', 'O'] as const).map(p => {
         const active = current === p && !gameOver
-        const label = scores != null
-          ? String(scores[p])
-          : mode === 'computer' ? (p === 'X' ? 'You' : 'Me') : (p === 'X' ? 'Blue' : 'Red')
+        const label = labels != null
+          ? labels[p]
+          : scores != null
+            ? String(scores[p])
+            : mode === 'computer' ? (p === 'X' ? 'You' : 'Me') : (p === 'X' ? 'Blue' : 'Red')
         return (
           <div key={p} style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
             <div style={{
               width: 32, height: 32, borderRadius: '50%',
-              background: P_COLOR[p],
-              flexShrink: 0,
+              background: P_COLOR[p], flexShrink: 0,
               display: 'flex', alignItems: 'center', justifyContent: 'center',
             }}>
-              {active && <span style={{ fontSize: 14, lineHeight: 1, color: '#fff', userSelect: 'none' }}>★</span>}
+              {icons && <span style={{ lineHeight: 0, color: '#fff', userSelect: 'none' }}>{icons[p]}</span>}
             </div>
             <span style={{
               fontSize: scores != null ? 22 : 16,
@@ -3464,7 +3467,7 @@ function TurnIndicator({ current, gameOver, mode, P_COLOR, isLandscape, scores }
               color: P_COLOR[p],
               fontFamily: 'inherit',
               lineHeight: 1,
-            }}>{label}</span>
+            }}>{label}{active ? <span style={{ fontSize: '1.5em', marginLeft: 4 }}>👈</span> : ''}</span>
           </div>
         )
       })}
@@ -3492,6 +3495,13 @@ function ModeSelector({ mode, onReset }: { mode: TTTMode; onReset: (m: TTTMode) 
   )
 }
 
+
+// ─── Ch4 shared SVG grid constants (same scale across all pages) ──────────────
+const CH4_DOT_R    = 6    // dot radius (viewBox units, same scale as DB)
+const CH4_DOT_SEL  = 9    // selected dot radius
+const CH4_LW_E     = 2    // empty grid line stroke-width
+const CH4_VB_PAD   = 40   // viewBox padding
+const CH4_VB_CELL  = 80   // cell size in viewBox units
 
 // ─── Chapter 4 Page 1 — Tic Tac Toe ─────────────────────────────────────────
 type TTTCell = null | 'X' | 'O'
@@ -3546,7 +3556,6 @@ function TicTacToePage() {
   const [hovered, setHovered]   = useState<number | null>(null)
   const aiPendingRef            = useRef(false)
   const isLandscape             = useIsLandscape()
-  const vw                      = useWindowWidth()
 
   const P_COLOR: Record<'X'|'O', string> = { X: BLUE, O: RED }
   const gameOver = status !== 'playing'
@@ -3593,17 +3602,6 @@ function TicTacToePage() {
     }
   }
 
-  const CELL = Math.min(130, Math.max(70, isLandscape
-    ? Math.floor((window.innerHeight - 170) / 3)
-    : Math.floor((vw - 50) / 3)))
-  const LINE = '2px solid #1a1a1a'
-  const isWin = (i: number) => winLine?.includes(i) ?? false
-
-  function cellBorders(i: number): React.CSSProperties {
-    const col = i % 3, row = Math.floor(i / 3)
-    return { borderRight: col < 2 ? LINE : 'none', borderBottom: row < 2 ? LINE : 'none', borderTop: 'none', borderLeft: 'none' }
-  }
-
   const canClick = (i: number) =>
     board[i] === null && status === 'playing' && !aiPendingRef.current &&
     (mode === 'two-player' || current === 'X')
@@ -3615,33 +3613,67 @@ function TicTacToePage() {
     : mode === 'computer' ? (current === 'X' ? 'Your turn!' : 'Thinking…')
     : (current === 'X' ? "Blue's turn!" : "Red's turn!")
 
+  const TTT_N  = 3
+  const TTT_VB = 2 * CH4_VB_PAD + TTT_N * CH4_VB_CELL   // 320
+  const tttDp  = (r: number, c: number) => ({ x: CH4_VB_PAD + c * CH4_VB_CELL, y: CH4_VB_PAD + r * CH4_VB_CELL })
+  const PIECE_R = CH4_VB_CELL * 0.28
+
   const boardGrid = (
-    <div style={{ display: 'grid', gridTemplateColumns: `repeat(3, ${CELL}px)`, gridTemplateRows: `repeat(3, ${CELL}px)` }}>
+    <svg viewBox={`0 0 ${TTT_VB} ${TTT_VB}`} preserveAspectRatio="xMidYMid meet"
+      style={{ width: '100%', height: '100%', display: 'block', overflow: 'visible' }}>
+
+      {/* Grid lines */}
+      {Array.from({ length: TTT_N + 1 }, (_, r) => {
+        const { x: x0, y } = tttDp(r, 0), { x: x1 } = tttDp(r, TTT_N)
+        return <line key={`h${r}`} x1={x0} y1={y} x2={x1} y2={y} stroke="#ddd" strokeWidth={CH4_LW_E} strokeLinecap="round" />
+      })}
+      {Array.from({ length: TTT_N + 1 }, (_, c) => {
+        const { x, y: y0 } = tttDp(0, c), { y: y1 } = tttDp(TTT_N, c)
+        return <line key={`v${c}`} x1={x} y1={y0} x2={x} y2={y1} stroke="#ddd" strokeWidth={CH4_LW_E} strokeLinecap="round" />
+      })}
+
+      {/* Cell win highlight + click areas */}
       {board.map((cell, i) => {
-        const win      = isWin(i)
-        const hovering = hovered === i && canClick(i)
+        const row = Math.floor(i / 3), col = i % 3
+        const { x, y } = tttDp(row, col)
+        const win = winLine?.includes(i)
         return (
-          <div key={i}
+          <rect key={i} x={x} y={y} width={CH4_VB_CELL} height={CH4_VB_CELL}
+            fill={win ? P_COLOR[cell as 'X'|'O'] + '22' : 'transparent'}
+            style={{ cursor: canClick(i) ? 'pointer' : 'default' }}
             onClick={() => handleCellClick(i)}
             onMouseEnter={() => setHovered(i)}
             onMouseLeave={() => setHovered(null)}
-            style={{
-              width: CELL, height: CELL,
-              background: win ? P_COLOR[cell as 'X'|'O'] + '22' : 'transparent',
-              ...cellBorders(i),
-              display: 'flex', alignItems: 'center', justifyContent: 'center',
-              cursor: canClick(i) ? 'pointer' : 'default',
-              transition: 'background 0.15s',
-              boxSizing: 'border-box',
-            }}
-          >
-            {cell === 'X' && <div style={{ width: CELL * 0.56, height: CELL * 0.56, borderRadius: '50%', background: BLUE }} />}
-            {cell === 'O' && <div style={{ width: CELL * 0.56, height: CELL * 0.56, borderRadius: '50%', background: RED  }} />}
-            {hovering    && <div style={{ width: CELL * 0.56, height: CELL * 0.56, borderRadius: '50%', background: P_COLOR[current] + '38' }} />}
-          </div>
+          />
         )
       })}
-    </div>
+
+      {/* Win line */}
+      {winLine && (() => {
+        const a = winLine[0], c = winLine[2]
+        const p1 = { x: CH4_VB_PAD + (a % 3 + 0.5) * CH4_VB_CELL, y: CH4_VB_PAD + (Math.floor(a / 3) + 0.5) * CH4_VB_CELL }
+        const p2 = { x: CH4_VB_PAD + (c % 3 + 0.5) * CH4_VB_CELL, y: CH4_VB_PAD + (Math.floor(c / 3) + 0.5) * CH4_VB_CELL }
+        return <line x1={p1.x} y1={p1.y} x2={p2.x} y2={p2.y}
+          stroke={P_COLOR[board[a] as 'X'|'O']} strokeWidth={4} strokeLinecap="round" opacity={0.5} />
+      })()}
+
+      {/* Pieces */}
+      {board.map((cell, i) => {
+        if (!cell) return null
+        const row = Math.floor(i / 3), col = i % 3
+        const cx = CH4_VB_PAD + (col + 0.5) * CH4_VB_CELL
+        const cy = CH4_VB_PAD + (row + 0.5) * CH4_VB_CELL
+        return <circle key={i} cx={cx} cy={cy} r={PIECE_R} fill={P_COLOR[cell as 'X'|'O']} style={{ pointerEvents: 'none' }} />
+      })}
+
+      {/* Hover preview */}
+      {hovered !== null && canClick(hovered) && (() => {
+        const row = Math.floor(hovered / 3), col = hovered % 3
+        return <circle cx={CH4_VB_PAD + (col + 0.5) * CH4_VB_CELL} cy={CH4_VB_PAD + (row + 0.5) * CH4_VB_CELL}
+          r={PIECE_R} fill={P_COLOR[current] + '38'} style={{ pointerEvents: 'none' }} />
+      })()}
+
+    </svg>
   )
 
   const playAgainOverlay = !gameOver ? null : (
@@ -3655,8 +3687,6 @@ function TicTacToePage() {
     </div>
   )
 
-  const controlBorder = '1.5px solid #ede8df'
-
   if (isLandscape) {
     return (
       <>
@@ -3667,7 +3697,7 @@ function TicTacToePage() {
             <ModeSelector mode={mode} onReset={resetGame} />
           </div>
           {/* Board */}
-          <div style={{ flex: 1, position: 'relative', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+          <div style={{ flex: 1, position: 'relative', display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 24, boxSizing: 'border-box' }}>
             {boardGrid}
             {playAgainOverlay}
           </div>
@@ -3686,7 +3716,7 @@ function TicTacToePage() {
           <TurnIndicator current={current} gameOver={gameOver} mode={mode} P_COLOR={P_COLOR} isLandscape={false} />
         </div>
         {/* Middle: game area */}
-        <div style={{ flex: 1, position: 'relative', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+        <div style={{ flex: 1, position: 'relative', display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 20, boxSizing: 'border-box' }}>
           {boardGrid}
           {playAgainOverlay}
         </div>
@@ -3702,14 +3732,14 @@ function TicTacToePage() {
 }
 
 // ─── Chapter 4 / Page 2: Dots and Boxes ──────────────────────────────────────
-const DB_N       = 4                      // 4×4 = 16 boxes
-const DB_VB_PAD  = 40                     // padding inside the SVG viewBox
-const DB_VB_CELL = 80                     // viewBox units per cell
-const DB_VB      = 2 * DB_VB_PAD + DB_N * DB_VB_CELL  // = 480  (total viewBox side)
-const DB_DOT_R   = 6                      // normal dot radius (viewBox units)
-const DB_DOT_SEL = 9                      // selected dot radius
-const DB_LW      = 5                      // drawn line stroke-width
-const DB_LW_E    = 2                      // empty line stroke-width
+const DB_N       = 4                           // 4×4 = 16 boxes
+const DB_VB_PAD  = CH4_VB_PAD                  // = 40
+const DB_VB_CELL = CH4_VB_CELL                 // = 80
+const DB_VB      = 2 * DB_VB_PAD + DB_N * DB_VB_CELL  // = 480
+const DB_DOT_R   = CH4_DOT_R                   // = 6
+const DB_DOT_SEL = CH4_DOT_SEL                 // = 9
+const DB_LW      = 5                           // drawn line stroke-width
+const DB_LW_E    = CH4_LW_E                    // = 2
 
 // ViewBox position of dot (row, col)
 const dbDp = (r: number, c: number) => ({
@@ -4047,7 +4077,525 @@ function Ch3Page2L3() { return <Ch3Page2 winTarget={C3P2_WIN3} variant="hard" />
 function Ch3Page3L3() { return <Ch3Page3 winTarget={C3P3_WIN_DIST3} variant="hard" /> }
 
 const CHAPTER3_PAGES = [Ch3Page1, Ch3Page1L2, Ch3Page1L3, Ch3Page2, Ch3Page2L2, Ch3Page2L3, Ch3Page3, Ch3Page3L2, Ch3Page3L3]
-// ─── Chapter 4 / Page 3: Cat and Mouse ────────────────────────────────────────
+// ─── Chapter 4 / Page 3: Dot Triangles ────────────────────────────────────────
+
+const DT_VB   = 300   // SVG viewBox size
+const DT_PAD  = 20    // padding inside viewBox
+const DT_N    = 13    // number of random dots
+
+function dtEdgeKey(a: number, b: number) { return a < b ? `${a},${b}` : `${b},${a}` }
+
+function dtSegCross(ax:number,ay:number,bx:number,by:number,cx:number,cy:number,dx:number,dy:number): boolean {
+  const cr = (ox:number,oy:number,p1x:number,p1y:number,p2x:number,p2y:number) =>
+    (p1x-ox)*(p2y-oy)-(p1y-oy)*(p2x-ox)
+  const d1=cr(cx,cy,dx,dy,ax,ay), d2=cr(cx,cy,dx,dy,bx,by)
+  const d3=cr(ax,ay,bx,by,cx,cy), d4=cr(ax,ay,bx,by,dx,dy)
+  return ((d1>0&&d2<0)||(d1<0&&d2>0))&&((d3>0&&d4<0)||(d3<0&&d4>0))
+}
+
+function dtBuildGraph(dots: {x:number;y:number}[]) {
+  const N = dots.length
+  const allEdges: [number,number][] = []
+  for (let i=0;i<N;i++) for (let j=i+1;j<N;j++) allEdges.push([i,j])
+  allEdges.sort(([a,b],[c,d]) =>
+    Math.hypot(dots[b].x-dots[a].x,dots[b].y-dots[a].y) -
+    Math.hypot(dots[d].x-dots[c].x,dots[d].y-dots[c].y))
+
+  const edges: [number,number][] = []
+  for (const [i,j] of allEdges) {
+    if (!edges.some(([a,b]) =>
+      a!==i&&a!==j&&b!==i&&b!==j &&
+      dtSegCross(dots[i].x,dots[i].y,dots[j].x,dots[j].y,
+                 dots[a].x,dots[a].y,dots[b].x,dots[b].y)
+    )) edges.push([i,j])
+  }
+
+  const adj: Set<number>[] = Array.from({length:N},()=>new Set())
+  for (const [a,b] of edges) { adj[a].add(b); adj[b].add(a) }
+
+  const triangles: [number,number,number][] = []
+  for (let a=0;a<N;a++)
+    for (const b of adj[a]) if (b>a)
+      for (const c of adj[b]) if (c>b&&adj[a].has(c))
+        triangles.push([a,b,c])
+
+  return { edges, triangles }
+}
+
+function dtGenerateDots(): {x:number;y:number}[] {
+  const avail = DT_VB - 2*DT_PAD
+  const minD  = avail/Math.sqrt(DT_N)*0.72
+  const dots: {x:number;y:number}[] = []
+  let tries = 0
+  while (dots.length < DT_N && tries < 2000) {
+    tries++
+    const x = DT_PAD + Math.random()*avail
+    const y = DT_PAD + Math.random()*avail
+    if (dots.every(d => Math.hypot(d.x-x,d.y-y) > minD)) dots.push({x,y})
+  }
+  while (dots.length < DT_N) dots.push({x:DT_PAD+Math.random()*avail, y:DT_PAD+Math.random()*avail})
+  return dots
+}
+
+function DotTrianglesPage() {
+  const isLandscape = useIsLandscape()
+  const [mode,    setMode]    = useState<TTTMode>('computer')
+  const [gameId,  setGameId]  = useState(0)
+  const [usedEdges, setUsedEdges] = useState<Set<string>>(new Set())
+  const [edgeOwner, setEdgeOwner] = useState<Record<string,'X'|'O'>>({})
+  const [claimed,   setClaimed]   = useState<Array<{tri:[number,number,number];player:'X'|'O'}>>([])
+  const [scoreX,  setScoreX]  = useState(0)
+  const [scoreO,  setScoreO]  = useState(0)
+  const [current, setCurrent] = useState<'X'|'O'>('X')
+  const [gameOver,setGameOver]= useState(false)
+  const [selDot,  setSelDot]  = useState<number|null>(null)
+  const [dragPt,  setDragPt]  = useState<{x:number;y:number}|null>(null)
+  const svgRef = useRef<SVGSVGElement>(null)
+
+  const { dots, validEdges, validTriangles } = useMemo(() => {
+    const d = dtGenerateDots()
+    const { edges, triangles } = dtBuildGraph(d)
+    return { dots: d, validEdges: edges, validTriangles: triangles }
+  }, [gameId])
+
+  const validEdgeKeySet = useMemo(
+    () => new Set(validEdges.map(([a,b]) => dtEdgeKey(a,b))),
+    [validEdges])
+
+  const P_COLOR: Record<'X'|'O', string> = { X: BLUE, O: RED }
+
+  function resetGame(m: TTTMode = mode) {
+    setMode(m); setGameId(id => id+1)
+    setUsedEdges(new Set()); setEdgeOwner({}); setClaimed([])
+    setScoreX(0); setScoreO(0); setCurrent('X')
+    setGameOver(false); setSelDot(null); setDragPt(null)
+  }
+
+  function commitEdge(a: number, b: number, who: 'X'|'O' = current) {
+    const key = dtEdgeKey(a,b)
+    if (usedEdges.has(key)) return
+    const newUsed = new Set([...usedEdges, key])
+    const newOwner = { ...edgeOwner, [key]: who }
+    const newTris = validTriangles.filter(([ta,tb,tc]) => {
+      const ks = [dtEdgeKey(ta,tb),dtEdgeKey(tb,tc),dtEdgeKey(ta,tc)]
+      return ks.every(k => newUsed.has(k)) && !ks.every(k => usedEdges.has(k))
+    })
+    const newClaimed = [...claimed, ...newTris.map(tri => ({ tri, player: who }))]
+    const nx = scoreX + (who==='X' ? newTris.length : 0)
+    const no = scoreO + (who==='O' ? newTris.length : 0)
+    setUsedEdges(newUsed); setEdgeOwner(newOwner); setClaimed(newClaimed)
+    setScoreX(nx); setScoreO(no); setSelDot(null); setDragPt(null)
+    const remaining = validEdges.filter(([ea,eb]) => !newUsed.has(dtEdgeKey(ea,eb)))
+    if (remaining.length === 0) { setGameOver(true) }
+    else if (newTris.length === 0) { setCurrent(who === 'X' ? 'O' : 'X') }
+    // else same player goes again
+  }
+
+  // Computer move
+  useEffect(() => {
+    if (mode !== 'computer' || current !== 'O' || gameOver) return
+    const avail = validEdges.filter(([a,b]) => !usedEdges.has(dtEdgeKey(a,b)))
+    if (avail.length === 0) return
+    const t = setTimeout(() => {
+      // Prefer edges that complete triangles
+      let best = avail[0], bestN = -1
+      for (const [a,b] of avail) {
+        const k = dtEdgeKey(a,b)
+        const tmp = new Set([...usedEdges, k])
+        const n = validTriangles.filter(([ta,tb,tc]) =>
+          [dtEdgeKey(ta,tb),dtEdgeKey(tb,tc),dtEdgeKey(ta,tc)].every(x => tmp.has(x))
+        ).length
+        if (n > bestN) { bestN = n; best = [a,b] }
+      }
+      commitEdge(best[0], best[1], 'O')
+    }, 550)
+    return () => clearTimeout(t)
+  }, [mode, current, gameOver, usedEdges, validEdges, validTriangles])
+
+  function toSVGPt(e: React.PointerEvent) {
+    const svg = svgRef.current; if (!svg) return null
+    const p = svg.createSVGPoint(); p.x = e.clientX; p.y = e.clientY
+    return p.matrixTransform(svg.getScreenCTM()!.inverse())
+  }
+
+  function nearestAvailDot(pt:{x:number;y:number}, from:number, thresh:number) {
+    let best: number|null = null, bestD = thresh
+    for (let i=0;i<dots.length;i++) {
+      if (i===from) continue
+      const k = dtEdgeKey(from,i)
+      if (!validEdgeKeySet.has(k) || usedEdges.has(k)) continue
+      const d = Math.hypot(dots[i].x-pt.x, dots[i].y-pt.y)
+      if (d<bestD) { bestD=d; best=i }
+    }
+    return best
+  }
+
+  const isHumanTurn = !gameOver && (mode==='two-player' || current==='X')
+  const snapDot = selDot!==null && dragPt ? nearestAvailDot(dragPt, selDot, 22) : null
+
+  const svgBoard = (
+    <svg ref={svgRef} viewBox={`0 0 ${DT_VB} ${DT_VB}`}
+      style={{ width:'100%', height:'100%', display:'block', overflow:'visible', touchAction:'none' }}
+      onPointerMove={e => {
+        if (selDot===null) return
+        const pt = toSVGPt(e); if (pt) setDragPt({x:pt.x,y:pt.y})
+      }}
+      onPointerUp={e => {
+        if (selDot===null) return
+        const pt = toSVGPt(e)
+        if (pt && isHumanTurn) {
+          const n = nearestAvailDot(pt, selDot, 26)
+          if (n!==null) { commitEdge(selDot,n); return }
+        }
+        setSelDot(null); setDragPt(null)
+      }}
+      onPointerLeave={() => { setSelDot(null); setDragPt(null) }}
+    >
+      {/* Claimed triangles */}
+      {claimed.map(({tri:[a,b,c],player},i) => (
+        <polygon key={i}
+          points={`${dots[a].x},${dots[a].y} ${dots[b].x},${dots[b].y} ${dots[c].x},${dots[c].y}`}
+          fill={P_COLOR[player]+'2e'} />
+      ))}
+
+      {/* Drawn edges */}
+      {validEdges.map(([a,b]) => {
+        const k = dtEdgeKey(a,b)
+        const own = edgeOwner[k]; if (!own) return null
+        return <line key={k} x1={dots[a].x} y1={dots[a].y} x2={dots[b].x} y2={dots[b].y}
+          stroke={P_COLOR[own]} strokeWidth={3} strokeLinecap="round" />
+      })}
+
+      {/* Drag preview line */}
+      {selDot!==null && dragPt && (() => {
+        const p2 = snapDot!==null ? dots[snapDot] : dragPt
+        const valid = snapDot!==null
+        return <line x1={dots[selDot].x} y1={dots[selDot].y} x2={p2.x} y2={p2.y}
+          stroke={P_COLOR[current]+(valid?'cc':'55')}
+          strokeWidth={valid ? 3 : 1.8}
+          strokeLinecap="round" strokeDasharray={valid?'none':'8 4'} />
+      })()}
+
+      {/* Dots */}
+      {dots.map((d,i) => {
+        const isSel  = selDot===i
+        const isSnap = snapDot===i
+        const canDrag = isHumanTurn &&
+          validEdges.some(([a,b]) => (a===i||b===i) && !usedEdges.has(dtEdgeKey(a,b)))
+        return <circle key={i} cx={d.x} cy={d.y}
+          r={isSel||isSnap ? CH4_DOT_SEL : CH4_DOT_R}
+          fill={isSel ? P_COLOR[current] : isSnap ? P_COLOR[current]+'cc' : '#ccc'}
+          style={{ cursor: canDrag?'grab':'default', transition:'r 0.1s, fill 0.1s' }}
+          onPointerDown={e => {
+            if (!canDrag) return
+            e.currentTarget.setPointerCapture(e.pointerId)
+            setSelDot(i)
+            const pt = toSVGPt(e); if (pt) setDragPt({x:pt.x,y:pt.y})
+          }}
+        />
+      })}
+    </svg>
+  )
+
+  const gameOverOverlay = gameOver ? (
+    <div style={{ position:'absolute', top:'50%', left:'50%', transform:'translate(-50%,-50%)', zIndex:10, pointerEvents:'auto' }}>
+      <div onClick={()=>resetGame()} style={{
+        padding:'9px 26px', borderRadius:30,
+        background: scoreX>scoreO ? BLUE : scoreX<scoreO ? RED : '#222',
+        color:'#fff', fontSize:15, fontWeight:700, cursor:'pointer', fontFamily:'inherit', boxShadow:'0 4px 20px #0003',
+      }}>
+        {scoreX>scoreO ? (mode==='computer'?'🎉 Play again!':'Blue wins! 🎉') :
+         scoreX<scoreO ? (mode==='computer'?'Try again!':'Red wins!') : '🤝 Play again!'}
+      </div>
+    </div>
+  ) : null
+
+  const modeSelector = <ModeSelector mode={mode} onReset={resetGame} />
+  const intro = gameOver
+    ? (scoreX>scoreO?(mode==='computer'?'You win! 🎉':'Blue wins!'):scoreX<scoreO?(mode==='computer'?'I win!':'Red wins!'):"It's a draw!")
+    : current==='X'
+      ? (mode==='computer'?'Your turn — drag to draw an edge':"Blue's turn")
+      : (mode==='computer'?'Thinking…':"Red's turn")
+
+  if (isLandscape) {
+    return (
+      <>
+        <div style={{ ...ch4CanvasStyle, flex:1, display:'flex', flexDirection:'row', overflow:'hidden' }}>
+          <div style={{ flexShrink:0, display:'flex', flexDirection:'column', alignItems:'flex-start', justifyContent:'space-between', padding:'24px 20px' }}>
+            <TurnIndicator current={current} gameOver={gameOver} mode={mode} P_COLOR={P_COLOR} isLandscape={true} scores={{X:scoreX,O:scoreO}} />
+            {modeSelector}
+          </div>
+          <div style={{ flex:1, position:'relative', display:'flex', alignItems:'center', justifyContent:'center', padding:24, boxSizing:'border-box' }}>
+            {svgBoard}
+            {gameOverOverlay}
+          </div>
+        </div>
+        <IntroText>{intro}</IntroText>
+      </>
+    )
+  }
+
+  return (
+    <>
+      <div style={{ ...ch4CanvasStyle, flex:1, display:'flex', flexDirection:'column', overflow:'hidden' }}>
+        <div style={{ display:'flex', alignItems:'center', justifyContent:'center', padding:'14px 16px', flexShrink:0 }}>
+          <TurnIndicator current={current} gameOver={gameOver} mode={mode} P_COLOR={P_COLOR} isLandscape={false} scores={{X:scoreX,O:scoreO}} />
+        </div>
+        <div style={{ flex:1, position:'relative', display:'flex', alignItems:'center', justifyContent:'center', padding:20, boxSizing:'border-box' }}>
+          {svgBoard}
+          {gameOverOverlay}
+        </div>
+        <div style={{ display:'flex', alignItems:'center', justifyContent:'center', padding:'12px 16px', flexShrink:0 }}>
+          {modeSelector}
+        </div>
+      </div>
+      <IntroText>{intro}</IntroText>
+    </>
+  )
+}
+
+// ─── Chapter 4 / Page 4: Rectangle Game ──────────────────────────────────────
+
+const RG_N   = 5                          // NxN cells, (N+1)x(N+1) dots
+const RG_PAD = 10                         // SVG viewBox padding
+const RG_CELL = (100 - 2 * RG_PAD) / RG_N
+
+function rgPos(r: number, c: number) {
+  return { x: RG_PAD + c * RG_CELL, y: RG_PAD + r * RG_CELL }
+}
+
+function rgNearestDot(pt: { x: number; y: number }) {
+  const c = Math.round((pt.x - RG_PAD) / RG_CELL)
+  const r = Math.round((pt.y - RG_PAD) / RG_CELL)
+  return { r: Math.max(0, Math.min(RG_N, r)), c: Math.max(0, Math.min(RG_N, c)) }
+}
+
+function rgRectSegs(r1: number, c1: number, r2: number, c2: number) {
+  const h: string[] = [], v: string[] = []
+  for (let c = c1; c < c2; c++) { h.push(`${r1},${c}`); h.push(`${r2},${c}`) }
+  for (let r = r1; r < r2; r++) { v.push(`${r},${c1}`); v.push(`${r},${c2}`) }
+  return { h, v }
+}
+
+function rgIsValid(r1: number, c1: number, r2: number, c2: number, hUsed: Set<string>, vUsed: Set<string>) {
+  if (r1 >= r2 || c1 >= c2) return false
+  const { h, v } = rgRectSegs(r1, c1, r2, c2)
+  return h.every(s => !hUsed.has(s)) && v.every(s => !vUsed.has(s))
+}
+
+function rgAllValid(hUsed: Set<string>, vUsed: Set<string>): Array<[number, number, number, number]> {
+  const moves: Array<[number, number, number, number]> = []
+  for (let r1 = 0; r1 <= RG_N; r1++)
+    for (let c1 = 0; c1 <= RG_N; c1++)
+      for (let r2 = r1 + 1; r2 <= RG_N; r2++)
+        for (let c2 = c1 + 1; c2 <= RG_N; c2++)
+          if (rgIsValid(r1, c1, r2, c2, hUsed, vUsed))
+            moves.push([r1, c1, r2, c2])
+  return moves
+}
+
+function RectangleGamePage() {
+  const isLandscape = useIsLandscape()
+  const [mode,    setMode]    = useState<TTTMode>('computer')
+  const [hUsed,   setHUsed]   = useState<Set<string>>(new Set())
+  const [vUsed,   setVUsed]   = useState<Set<string>>(new Set())
+  const [rects,   setRects]   = useState<Array<{ r1: number; c1: number; r2: number; c2: number; player: 'X' | 'O' }>>([])
+  const [current, setCurrent] = useState<'X' | 'O'>('X')
+  const [gameOver, setGameOver] = useState(false)
+  const [winner,  setWinner]  = useState<'X' | 'O' | null>(null)
+  const [dragStart, setDragStart] = useState<{ r: number; c: number } | null>(null)
+  const [dragCur,   setDragCur]   = useState<{ r: number; c: number } | null>(null)
+  const svgRef = useRef<SVGSVGElement>(null)
+  const P_COLOR: Record<'X' | 'O', string> = { X: BLUE, O: RED }
+
+  function commitRect(r1: number, c1: number, r2: number, c2: number, who: 'X' | 'O' = current) {
+    if (!rgIsValid(r1, c1, r2, c2, hUsed, vUsed)) return
+    const { h, v } = rgRectSegs(r1, c1, r2, c2)
+    const newH = new Set(hUsed); h.forEach(s => newH.add(s))
+    const newV = new Set(vUsed); v.forEach(s => newV.add(s))
+    const newRects = [...rects, { r1, c1, r2, c2, player: who }]
+    setHUsed(newH); setVUsed(newV); setRects(newRects)
+    setDragStart(null); setDragCur(null)
+    const next: 'X' | 'O' = who === 'X' ? 'O' : 'X'
+    if (rgAllValid(newH, newV).length === 0) {
+      setGameOver(true); setWinner(who)   // next player can't move → current wins
+    } else {
+      setCurrent(next)
+    }
+  }
+
+  function resetGame(m: TTTMode = mode) {
+    setMode(m); setHUsed(new Set()); setVUsed(new Set()); setRects([])
+    setCurrent('X'); setGameOver(false); setWinner(null)
+    setDragStart(null); setDragCur(null)
+  }
+
+  // Computer (O) move
+  useEffect(() => {
+    if (mode !== 'computer' || current !== 'O' || gameOver) return
+    const moves = rgAllValid(hUsed, vUsed)
+    if (moves.length === 0) { setGameOver(true); setWinner('X'); return }
+    const t = setTimeout(() => {
+      const pick = moves[Math.floor(Math.random() * moves.length)]
+      commitRect(pick[0], pick[1], pick[2], pick[3], 'O')
+    }, 550)
+    return () => clearTimeout(t)
+  }, [mode, current, gameOver, hUsed, vUsed])
+
+  function toSVGPt(e: React.PointerEvent) {
+    const svg = svgRef.current; if (!svg) return null
+    const p = svg.createSVGPoint(); p.x = e.clientX; p.y = e.clientY
+    return p.matrixTransform(svg.getScreenCTM()!.inverse())
+  }
+
+  const isHumanTurn = !gameOver && (mode === 'two-player' || current === 'X')
+
+  // Normalised preview rectangle
+  const previewRect = dragStart && dragCur && !(dragStart.r === dragCur.r && dragStart.c === dragCur.c)
+    ? { r1: Math.min(dragStart.r, dragCur.r), c1: Math.min(dragStart.c, dragCur.c),
+        r2: Math.max(dragStart.r, dragCur.r), c2: Math.max(dragStart.c, dragCur.c) }
+    : null
+  const previewValid = previewRect
+    ? rgIsValid(previewRect.r1, previewRect.c1, previewRect.r2, previewRect.c2, hUsed, vUsed)
+    : false
+
+  const svgBoard = (
+    <svg ref={svgRef} viewBox="0 0 100 100"
+      style={{ width: '100%', height: '100%', touchAction: 'none', overflow: 'visible' }}
+      onPointerMove={e => {
+        if (!dragStart) return
+        const pt = toSVGPt(e); if (pt) setDragCur(rgNearestDot(pt))
+      }}
+      onPointerUp={e => {
+        if (!dragStart || !isHumanTurn) { setDragStart(null); setDragCur(null); return }
+        const pt = toSVGPt(e)
+        if (pt) {
+          const end = rgNearestDot(pt)
+          if (end.r !== dragStart.r && end.c !== dragStart.c) {
+            const r1 = Math.min(dragStart.r, end.r), c1 = Math.min(dragStart.c, end.c)
+            const r2 = Math.max(dragStart.r, end.r), c2 = Math.max(dragStart.c, end.c)
+            commitRect(r1, c1, r2, c2)
+            return
+          }
+        }
+        setDragStart(null); setDragCur(null)
+      }}
+      onPointerLeave={() => { setDragStart(null); setDragCur(null) }}
+    >
+      {/* Grid background lines */}
+      {Array.from({ length: RG_N + 1 }, (_, r) =>
+        Array.from({ length: RG_N }, (_, c) => {
+          const p1 = rgPos(r, c), p2 = rgPos(r, c + 1)
+          return <line key={`h${r},${c}`} x1={p1.x} y1={p1.y} x2={p2.x} y2={p2.y}
+            stroke="#ddd" strokeWidth={0.5} />
+        })
+      )}
+      {Array.from({ length: RG_N }, (_, r) =>
+        Array.from({ length: RG_N + 1 }, (_, c) => {
+          const p1 = rgPos(r, c), p2 = rgPos(r + 1, c)
+          return <line key={`v${r},${c}`} x1={p1.x} y1={p1.y} x2={p2.x} y2={p2.y}
+            stroke="#ddd" strokeWidth={0.5} />
+        })
+      )}
+
+      {/* Drawn rectangles */}
+      {rects.map((rect, i) => {
+        const tl = rgPos(rect.r1, rect.c1), br = rgPos(rect.r2, rect.c2)
+        return <rect key={i} x={tl.x} y={tl.y} width={br.x - tl.x} height={br.y - tl.y}
+          fill="none" stroke={P_COLOR[rect.player]} strokeWidth={1} strokeLinejoin="round" />
+      })}
+
+      {/* Preview rectangle */}
+      {previewRect && (() => {
+        const tl = rgPos(previewRect.r1, previewRect.c1), br = rgPos(previewRect.r2, previewRect.c2)
+        return <rect x={tl.x} y={tl.y} width={br.x - tl.x} height={br.y - tl.y}
+          fill={previewValid ? P_COLOR[current] + '14' : 'none'}
+          stroke={P_COLOR[current] + (previewValid ? 'cc' : '44')}
+          strokeWidth={previewValid ? 1 : 0.5}
+          strokeDasharray={previewValid ? undefined : '4 3'}
+          strokeLinejoin="round" />
+      })()}
+
+      {/* Invisible hit-area dots for drag start */}
+      {Array.from({ length: RG_N + 1 }, (_, r) =>
+        Array.from({ length: RG_N + 1 }, (_, c) => {
+          const { x, y } = rgPos(r, c)
+          return <circle key={`d${r},${c}`} cx={x} cy={y}
+            r={5} fill="transparent"
+            style={{ cursor: isHumanTurn ? 'crosshair' : 'default' }}
+            onPointerDown={e => {
+              if (!isHumanTurn) return
+              e.currentTarget.setPointerCapture(e.pointerId)
+              setDragStart({ r, c }); setDragCur({ r, c })
+            }}
+          />
+        })
+      )}
+    </svg>
+  )
+
+  const gameOverOverlay = gameOver && winner ? (
+    <div style={{
+      position: 'absolute', inset: 0,
+      display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center',
+      gap: 14, background: 'rgba(255,255,255,0.88)', borderRadius: 16,
+    }}>
+      <div style={{ fontSize: 22, fontWeight: 800, color: P_COLOR[winner], fontFamily: 'inherit' }}>
+        {mode === 'computer' ? (winner === 'X' ? 'You win! 🎉' : 'I win! 😄') : `${winner === 'X' ? 'Blue' : 'Red'} wins!`}
+      </div>
+      <button onClick={() => resetGame()} style={{
+        padding: '8px 28px', borderRadius: 30, background: P_COLOR[winner], border: 'none',
+        color: '#fff', fontSize: 15, fontWeight: 700, cursor: 'pointer', fontFamily: 'inherit',
+      }}>Play Again</button>
+    </div>
+  ) : null
+
+  const modeSelector = <ModeSelector mode={mode} onReset={resetGame} />
+  const turnIndicator = <TurnIndicator current={current} gameOver={gameOver} mode={mode} P_COLOR={P_COLOR} isLandscape={isLandscape} />
+  const intro = gameOver
+    ? (winner === 'X' ? (mode === 'computer' ? 'You win! 🎉' : 'Blue wins!') : (mode === 'computer' ? 'I win! 😄' : 'Red wins!'))
+    : current === 'X'
+      ? (mode === 'computer' ? 'Your turn — drag to draw a rectangle' : "Blue's turn — drag a rectangle")
+      : (mode === 'computer' ? 'Thinking…' : "Red's turn — drag a rectangle")
+
+  if (isLandscape) {
+    return (
+      <>
+        <div style={{ ...ch4CanvasStyle, flex: 1, display: 'flex', flexDirection: 'row', overflow: 'hidden' }}>
+          <div style={{ flexShrink: 0, display: 'flex', flexDirection: 'column', alignItems: 'flex-start', justifyContent: 'space-between', padding: '24px 20px' }}>
+            {turnIndicator}
+            {modeSelector}
+          </div>
+          <div style={{ flex: 1, position: 'relative', display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 24, boxSizing: 'border-box' }}>
+            {svgBoard}
+            {gameOverOverlay}
+          </div>
+        </div>
+        <IntroText>{intro}</IntroText>
+      </>
+    )
+  }
+
+  return (
+    <>
+      <div style={{ ...ch4CanvasStyle, flex: 1, display: 'flex', flexDirection: 'column', overflow: 'hidden' }}>
+        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', padding: '14px 16px', flexShrink: 0 }}>
+          {turnIndicator}
+        </div>
+        <div style={{ flex: 1, position: 'relative', display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 20, boxSizing: 'border-box' }}>
+          {svgBoard}
+          {gameOverOverlay}
+        </div>
+        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', padding: '12px 16px', flexShrink: 0 }}>
+          {modeSelector}
+        </div>
+      </div>
+      <IntroText>{intro}</IntroText>
+    </>
+  )
+}
+
+// ─── Chapter 4 / Page 4: Cat and Mouse ────────────────────────────────────────
 
 // Pentagon + center graph (6 nodes)
 const CM_NODES = [
@@ -4068,52 +4616,112 @@ const CM_ADJ: number[][] = Array.from({ length: CM_NODES.length }, (_, i) =>
   CM_EDGES.flatMap(([a,b]) => a===i ? [b] : b===i ? [a] : [])
 )
 
-function cmBestCatMove(cat: number, mouse: number): number {
-  if (CM_ADJ[cat].includes(mouse)) return mouse
-  const q: number[][] = CM_ADJ[cat].map(n => [cat, n])
-  const vis = new Set([cat, ...CM_ADJ[cat]])
+function cmDist(from: number, to: number): number {
+  if (from === to) return 0
+  const q = [from], vis = new Set([from]), d = new Map([[from, 0]])
   while (q.length) {
-    const path = q.shift()!
-    const cur = path[path.length - 1]
+    const cur = q.shift()!; const dc = d.get(cur)!
     for (const nxt of CM_ADJ[cur]) {
-      if (nxt === mouse) return path[1]
-      if (!vis.has(nxt)) { vis.add(nxt); q.push([...path, nxt]) }
+      if (nxt === to) return dc + 1
+      if (!vis.has(nxt)) { vis.add(nxt); d.set(nxt, dc + 1); q.push(nxt) }
     }
   }
-  return CM_ADJ[cat][0]
+  return 99
+}
+
+// Minimax: returns estimated turns-to-catch (cat minimises, mouse maximises)
+function cmMinimax(cat: number, mouse: number, catTurn: boolean, depth: number, memo: Map<string,number>): number {
+  if (cat === mouse) return 0
+  if (depth <= 0) return cmDist(cat, mouse)
+  const key = `${cat},${mouse},${catTurn?1:0},${depth}`
+  const cached = memo.get(key); if (cached !== undefined) return cached
+  let result: number
+  if (catTurn) {
+    result = Infinity
+    for (const nxt of CM_ADJ[cat]) {
+      const v = nxt === mouse ? 0 : 1 + cmMinimax(nxt, mouse, false, depth - 1, memo)
+      if (v < result) result = v
+    }
+  } else {
+    result = 0; let hasMoves = false
+    for (const nxt of CM_ADJ[mouse]) {
+      if (nxt === cat) continue
+      hasMoves = true
+      const v = 1 + cmMinimax(cat, nxt, true, depth - 1, memo)
+      if (v > result) result = v
+    }
+    if (!hasMoves) result = 0
+  }
+  memo.set(key, result); return result
+}
+
+function cmBestCatMove(cat: number, mouse: number): number {
+  if (CM_ADJ[cat].includes(mouse)) return mouse
+  const memo = new Map<string,number>()
+  let bestMove = CM_ADJ[cat][0], bestVal = Infinity
+  for (const nxt of CM_ADJ[cat]) {
+    if (nxt === mouse) return nxt
+    const val = cmMinimax(nxt, mouse, false, 14, memo)
+    if (val < bestVal) { bestVal = val; bestMove = nxt }
+  }
+  return bestMove
+}
+
+function cmBestMouseMove(cat: number, mouse: number): number {
+  const valid = CM_ADJ[mouse].filter(n => n !== cat)
+  if (valid.length === 0) return CM_ADJ[mouse][0]
+  const memo = new Map<string,number>()
+  let bestMove = valid[0], bestVal = -Infinity
+  for (const nxt of valid) {
+    const val = cmMinimax(cat, nxt, true, 14, memo)
+    if (val > bestVal) { bestVal = val; bestMove = nxt }
+  }
+  return bestMove
 }
 
 function CatMousePage() {
   const isLandscape = useIsLandscape()
-  const [mode,     setMode]     = useState<TTTMode>('computer')
-  const [catPos,   setCatPos]   = useState(0)
-  const [mousePos, setMousePos] = useState(5)
-  const [turn,     setTurn]     = useState<'mouse'|'cat'>('mouse')
-  const [gameOver, setGameOver] = useState(false)
-  const [dragFrom, setDragFrom] = useState<number|null>(null)
-  const [dragPt,   setDragPt]   = useState<{x:number;y:number}|null>(null)
+  const [mode,          setMode]          = useState<TTTMode>('computer')
+  const [computerIsCat, setComputerIsCat] = useState(true)
+  const [catPos,        setCatPos]        = useState(0)
+  const [mousePos,      setMousePos]      = useState(5)
+  const [turn,          setTurn]          = useState<'mouse'|'cat'>('mouse')
+  const [gameOver,      setGameOver]      = useState(false)
+  const [dragFrom,      setDragFrom]      = useState<number|null>(null)
+  const [dragPt,        setDragPt]        = useState<{x:number;y:number}|null>(null)
   const svgRef = useRef<SVGSVGElement>(null)
 
   const CAT_COLOR   = RED
   const MOUSE_COLOR = BLUE
 
   function resetGame(m: TTTMode = mode) {
-    setMode(m); setCatPos(0); setMousePos(5)
+    const newComputerIsCat = Math.random() < 0.5
+    setMode(m); setComputerIsCat(newComputerIsCat)
+    setCatPos(0); setMousePos(5)
     setTurn('mouse'); setGameOver(false)
     setDragFrom(null); setDragPt(null)
   }
 
-  // Computer cat makes its move
+  // Computer makes its move
   useEffect(() => {
-    if (mode !== 'computer' || turn !== 'cat' || gameOver) return
+    if (mode !== 'computer' || gameOver) return
+    const isComputerTurn = (computerIsCat && turn === 'cat') || (!computerIsCat && turn === 'mouse')
+    if (!isComputerTurn) return
     const t = setTimeout(() => {
-      const next = cmBestCatMove(catPos, mousePos)
-      setCatPos(next)
-      if (next === mousePos) setGameOver(true)
-      else setTurn('mouse')
+      if (computerIsCat) {
+        const next = cmBestCatMove(catPos, mousePos)
+        setCatPos(next)
+        if (next === mousePos) setGameOver(true)
+        else setTurn('mouse')
+      } else {
+        const next = cmBestMouseMove(catPos, mousePos)
+        setMousePos(next)
+        if (next === catPos) { setGameOver(true); return }
+        setTurn('cat')
+      }
     }, 500)
     return () => clearTimeout(t)
-  }, [mode, turn, gameOver, catPos, mousePos])
+  }, [mode, turn, gameOver, catPos, mousePos, computerIsCat])
 
   function doMove(to: number) {
     if (gameOver) return
@@ -4146,9 +4754,11 @@ function CatMousePage() {
     return best
   }
 
-  const isMyTurn   = !gameOver && (mode === 'two-player' || turn === 'mouse')
-  const myPos      = turn === 'mouse' ? mousePos : catPos
-  const validMoves = isMyTurn ? CM_ADJ[myPos] : []
+  // Which piece the human controls this turn
+  const activePiece: 'mouse'|'cat' = mode === 'two-player' ? turn : (computerIsCat ? 'mouse' : 'cat')
+  const isHumanTurn = !gameOver && (mode === 'two-player' || turn === activePiece)
+  const humanPos    = activePiece === 'mouse' ? mousePos : catPos
+  const validMoves  = isHumanTurn ? CM_ADJ[humanPos] : []
   const NR = 5 // node radius in SVG viewBox units (smaller)
 
   // ── SVG board ──────────────────────────────────────────────────────────────
@@ -4164,7 +4774,7 @@ function CatMousePage() {
       onPointerUp={e => {
         if (dragFrom === null) return
         const pt = toSVGPt(e)
-        if (pt) {
+        if (pt && isHumanTurn) {
           const target = nearestValid(pt, validMoves)
           if (target !== null) doMove(target)
         }
@@ -4177,7 +4787,7 @@ function CatMousePage() {
         <line key={i}
           x1={CM_NODES[a].x} y1={CM_NODES[a].y}
           x2={CM_NODES[b].x} y2={CM_NODES[b].y}
-          stroke="#d0d0d0" strokeWidth={1.5} strokeLinecap="round"
+          stroke="#ddd" strokeWidth={0.5} strokeLinecap="round"
         />
       ))}
 
@@ -4186,10 +4796,10 @@ function CatMousePage() {
         if (i === catPos || i === mousePos) return null
         const isTarget = validMoves.includes(i)
         return (
-          <circle key={i} cx={n.x} cy={n.y} r={NR}
-            fill="#e0e0e0" stroke="#ccc" strokeWidth={1}
+          <circle key={i} cx={n.x} cy={n.y} r={2}
+            fill="#ccc"
             style={{ cursor: isTarget ? 'pointer' : 'default' }}
-            onClick={() => { if (isTarget && dragFrom === null) doMove(i) }}
+            onClick={() => { if (isTarget && isHumanTurn && dragFrom === null) doMove(i) }}
           />
         )
       })}
@@ -4199,18 +4809,20 @@ function CatMousePage() {
         <line
           x1={CM_NODES[dragFrom].x} y1={CM_NODES[dragFrom].y}
           x2={dragPt.x} y2={dragPt.y}
-          stroke={turn === 'mouse' ? MOUSE_COLOR : CAT_COLOR} strokeWidth={2} strokeLinecap="round" opacity={0.75}
+          stroke={turn === 'mouse' ? MOUSE_COLOR : CAT_COLOR} strokeWidth={1} strokeLinecap="round" opacity={0.75}
         />
       )}
 
       {/* Pieces: mouse first so cat renders on top */}
       {[
-        { id: 'mouse', pos: mousePos, emoji: '🐭', color: MOUSE_COLOR, isTurn: turn === 'mouse' },
-        { id: 'cat',   pos: catPos,   emoji: '🐱', color: CAT_COLOR,   isTurn: turn === 'cat'   },
-      ].map(({ id, pos, emoji, color, isTurn }) => {
+        { id: 'mouse', pos: mousePos, isX: true,  color: MOUSE_COLOR },
+        { id: 'cat',   pos: catPos,   isX: false, color: CAT_COLOR   },
+      ].map(({ id, pos, isX, color }) => {
         const isDragging = dragFrom === pos
         const n = isDragging && dragPt ? dragPt : CM_NODES[pos]
-        const canDrag = isMyTurn && isTurn && (id === 'mouse' || mode === 'two-player')
+        const canDrag = isHumanTurn && id === activePiece
+        // Scale Lucide 24×24 path into NR+1=6 radius: scale = (NR*2*0.6)/24
+        const s = (NR * 2 * 0.6) / 24
         return (
           <g key={id} transform={`translate(${n.x},${n.y})`}
              style={{ cursor: canDrag ? 'grab' : 'default' }}
@@ -4221,12 +4833,14 @@ function CatMousePage() {
                const pt = toSVGPt(e); if (pt) setDragPt({ x: pt.x, y: pt.y })
              }}>
             <circle r={NR + 1} fill={color}
-              style={{ filter: 'drop-shadow(0 2px 4px rgba(0,0,0,0.2))' }}
             />
-            <text textAnchor="middle" dominantBaseline="central"
-              fontSize={8} style={{ pointerEvents: 'none', userSelect: 'none' }}>
-              {emoji}
-            </text>
+            {/* Lucide icon paths scaled & centered (original viewBox 0 0 24 24) */}
+            <g transform={`scale(${s}) translate(-12,-12)`} stroke="#fff" strokeWidth={2.5} strokeLinecap="round" strokeLinejoin="round" fill="none" style={{ pointerEvents: 'none' }}>
+              {isX
+                ? <><path d="M18 6 6 18"/><path d="m6 6 12 12"/></>
+                : <circle cx={12} cy={12} r={10} />
+              }
+            </g>
           </g>
         )
       })}
@@ -4240,8 +4854,8 @@ function CatMousePage() {
       display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center',
       gap: 14, background: 'rgba(255,255,255,0.88)', borderRadius: 16,
     }}>
-      <div style={{ fontSize: 52 }}>🐱</div>
-      <div style={{ fontSize: 22, fontWeight: 800, color: '#222', fontFamily: 'inherit' }}>Cat wins!</div>
+      <div style={{ fontSize: 52, color: CAT_COLOR, fontWeight: 900, lineHeight: 1 }}>○</div>
+      <div style={{ fontSize: 22, fontWeight: 800, color: CAT_COLOR, fontFamily: 'inherit' }}>Cell wins!</div>
       <button onClick={() => resetGame()} style={{
         padding: '8px 28px', borderRadius: 30, background: CAT_COLOR, border: 'none',
         color: '#fff', fontSize: 15, fontWeight: 700, cursor: 'pointer', fontFamily: 'inherit',
@@ -4250,17 +4864,25 @@ function CatMousePage() {
   ) : null
 
   const CM_P_COLOR: Record<'X'|'O', string> = { X: MOUSE_COLOR, O: CAT_COLOR }
+  const CM_ICONS: Record<'X'|'O', React.ReactNode> = {
+    X: <LucideX size={14} strokeWidth={2.5} color="#fff" />,
+    O: <LucideCircle size={13} strokeWidth={2.5} color="#fff" />,
+  }
+  const CM_LABELS: Record<'X'|'O', string> = mode === 'computer'
+    ? (computerIsCat ? { X: 'You', O: 'Me' } : { X: 'Me', O: 'You' })
+    : { X: 'virus', O: 'cell' }
   const modeSelector = <ModeSelector mode={mode} onReset={resetGame} />
-  const intro = gameOver ? '🐱 Cat wins!'
-    : turn === 'mouse' ? (mode === 'computer' ? 'Your turn! Drag 🐭 to move' : "Mouse's turn — drag to move")
-    : (mode === 'computer' ? '🐱 Cat is thinking…' : "Cat's turn — drag to move")
+  const intro = gameOver ? 'Cell wins!'
+    : turn === 'mouse'
+      ? (mode === 'computer' && !computerIsCat ? 'Virus is thinking…' : "Virus's turn — drag to move")
+      : (mode === 'computer' && computerIsCat  ? 'Cell is thinking…'  : "Cell's turn — drag to move")
 
   if (isLandscape) {
     return (
       <>
         <div style={{ ...ch4CanvasStyle, flex: 1, display: 'flex', flexDirection: 'row', overflow: 'hidden' }}>
           <div style={{ flexShrink: 0, display: 'flex', flexDirection: 'column', alignItems: 'flex-start', justifyContent: 'space-between', padding: '24px 20px' }}>
-            <TurnIndicator current={turn === 'mouse' ? 'X' : 'O'} gameOver={gameOver} mode={mode} P_COLOR={CM_P_COLOR} isLandscape={true} />
+            <TurnIndicator current={turn === 'mouse' ? 'X' : 'O'} gameOver={gameOver} mode={mode} P_COLOR={CM_P_COLOR} isLandscape={true} icons={CM_ICONS} labels={CM_LABELS} />
             {modeSelector}
           </div>
           <div style={{ flex: 1, position: 'relative', display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 24, boxSizing: 'border-box' }}>
@@ -4277,7 +4899,7 @@ function CatMousePage() {
     <>
       <div style={{ ...ch4CanvasStyle, flex: 1, display: 'flex', flexDirection: 'column', overflow: 'hidden' }}>
         <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', padding: '14px 16px', flexShrink: 0 }}>
-          <TurnIndicator current={turn === 'mouse' ? 'X' : 'O'} gameOver={gameOver} mode={mode} P_COLOR={CM_P_COLOR} isLandscape={false} />
+          <TurnIndicator current={turn === 'mouse' ? 'X' : 'O'} gameOver={gameOver} mode={mode} P_COLOR={CM_P_COLOR} isLandscape={false} icons={CM_ICONS} labels={CM_LABELS} />
         </div>
         <div style={{ flex: 1, position: 'relative', display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 20, boxSizing: 'border-box' }}>
           {svgBoard}
@@ -4292,7 +4914,7 @@ function CatMousePage() {
   )
 }
 
-const CHAPTER4_PAGES: React.ComponentType[] = [TicTacToePage, DotsAndBoxesPage, CatMousePage]
+const CHAPTER4_PAGES: React.ComponentType[] = [TicTacToePage, DotsAndBoxesPage, DotTrianglesPage, RectangleGamePage, CatMousePage]
 
 export default function PressHere() {
   const [page,       setPage]      = useState(0)
