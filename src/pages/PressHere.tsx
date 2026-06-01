@@ -1938,56 +1938,26 @@ function isNeighbor(a: number, b: number, n: number, open = false) {
 function edgeKey(a: number, b: number) { return `${Math.min(a, b)}-${Math.max(a, b)}` }
 
 // ── All available shapes (720×720 space) — pool for Ch2 dot-connection pages ──
-const SHAPE_DEFS: ShapeDef[] = [
-  // 01 — umbrella (handle hook → up → cap arc, open, 9 verts; start at tip of handle)
-  { vertices: [[280.938,580.237],[280.938,631],[360.285,631],[360.285,312.77],[80,312.77],[194.169,172.459],[360.285,112],[527.543,172.459],[640,312.77]],
-    open:true, emoji:'☂️', label:'Connect the umbrella!' },
-  // 02 — irregular shield (closed, 7 verts)
-  { vertices: [[387.264,430.841],[387.264,122],[603,122],[603,628],[98.576,628],[78,571.223],[135.987,470.772]],
-    open:false, emoji:'🔷', label:'Connect it!' },
-  // 03 — twisted loop (closed, 10 verts)
-  { vertices: [[563.163,354.904],[593,416.786],[494.483,557.429],[494.483,630],[258.042,630],[250.724,554.616],[128,276.707],[290.694,122],[494.483,181.632],[465.209,455.604]],
-    open:false, emoji:'💫', label:'Connect it!' },
-  // 04 — double arrow (closed, 11 verts)
-  { vertices: [[143.695,291.855],[361.487,58],[577.791,291.855],[433.588,291.855],[638,520.496],[406.413,520.496],[406.413,662],[317.304,662],[317.304,520.496],[82,520.496],[290.128,291.855]],
-    open:false, emoji:'⬆️', label:'Connect it!' },
-  // 05 — trident (closed, 7 verts)
-  { vertices: [[257.155,398.23],[359.729,190],[460.679,398.23],[625,222.536],[625,530],[95,530],[95,222.536]],
-    open:false, emoji:'🔱', label:'Connect it!' },
-  // 06 — house (closed, 11 verts)
-  { vertices: [[213.192,371.258],[213.192,597],[298.436,597],[298.436,443.688],[421.564,443.688],[421.564,597],[507.4,597],[507.4,371.258],[640,371.258],[360.592,123],[80,371.258]],
-    open:false, emoji:'🏠', label:'Connect the house!' },
-  // 07 — frame (closed, 11 verts)
-  { vertices: [[188.868,153],[59,304.901],[90.7048,359.195],[59,414.709],[188.868,566],[401.046,566],[516.28,414.709],[662,503.775],[662,214.004],[516.28,304.901],[401.046,153]],
-    open:false, emoji:'🎮', label:'Connect it!' },
-  // 08 — bolt (closed, 11 verts)
-  { vertices: [[569.495,129],[673,182.767],[615.276,218.612],[615.276,342.078],[527.695,429.698],[258.981,487.448],[83.819,591],[298.79,342.078],[46,129],[258.981,129],[434.143,218.612]],
-    open:false, emoji:'⚡', label:'Connect it!' },
-  // 09 — zigzag scissors (closed, 13 verts)
-  { vertices: [[489.119,138.37],[573.863,125.784],[560.858,210.109],[289.721,466.982],[371.049,548.309],[307.389,574.212],[244.94,511.763],[182.444,588.523],[110.705,516.784],[188.724,455.546],[124.177,391],[151.338,328.599],[233.505,410.765]],
-    open:false, emoji:'✂️', label:'Connect it!' },
-  // 10 — trophy / goblet  (closed, 11 verts)
-  { vertices: [[254.664,182.986],[360.684,71],[467.388,182.986],[467.388,362.573],[531,435.637],[531,648],[477.648,584.496],[254.664,584.496],[189,648],[189,435.637],[254.664,362.573]],
-    open:false, emoji:'🏆', label:'Connect the arch!' },
-  // 11 — spiral  (OPEN, 12 verts)
-  { vertices: [[405.504,326.324],[351.837,372.934],[413.663,441.184],[493.285,385.923],[413.592,263.654],[278.33,334.955],[307.05,490.673],[505.733,527.341],[617.202,301.83],[463.275,121.986],[146.546,195.544],[82.644,543.242]],
-    open:true, emoji:'🌊', label:'Connect the wave!' },
-  // 12 — staircase  (OPEN, 10 verts)
-  { vertices: [[64,596],[181.383,596],[181.383,478.846],[300.461,478.846],[300.461,360],[418.691,360],[418.691,240.731],[536.922,240.731],[536.922,124],[656,124]],
-    open:true, emoji:'📶', label:'Connect the stairs!' },
-  // 13 — tree / Y  (closed, 11 verts)
-  { vertices: [[344.09,474.299],[344.09,612],[378.238,612],[378.238,474.299],[569.153,377.053],[639,160],[444.981,251.022],[360.388,429.955],[273.467,251.022],[81,160],[149.295,377.053]],
-    open:false, emoji:'🌿', label:'Connect the tree!' },
-  // 14 — comet  (closed, 11 verts)
-  { vertices: [[410.929,325.658],[501.745,196.832],[538.546,106],[576.535,106],[553.386,169.523],[589,245.513],[501.745,451.516],[309.428,575],[72,526.319],[72,496.042],[259.568,451.516]],
-    open:false, emoji:'☄️', label:'Connect the comet!' },
-  // 15 — gem / shield  (closed, 8 verts)
-  { vertices: [[502.093,130],[359.273,234.949],[215.777,130],[80,205.187],[80,393.678],[359.273,590],[639,393.678],[639,205.187]],
-    open:false, emoji:'💎', label:'Connect the gem!' },
-  // 16 — star  (closed, 10 verts)
-  { vertices: [[293.5,298.5],[360,91],[428,298.5],[642.5,298.5],[468.5,424.5],[533.5,629.5],[360,502.5],[186,629.5],[252,424.5],[78,298.5]],
-    open:false, emoji:'⭐', label:'Connect the star!' },
-]
+// Load shape SVGs from src/shapes/*.svg at build time (edit those files to add/change shapes)
+const _rawShapeSVGs = import.meta.glob('../shapes/*.svg', { query: '?raw', import: 'default', eager: true }) as Record<string, string>
+
+function _parseSVGShape(raw: string): ShapeDef {
+  const doc = new DOMParser().parseFromString(raw, 'image/svg+xml')
+  const svg = doc.documentElement
+  const poly = svg.querySelector('polyline')!
+  const vertices = poly.getAttribute('points')!.trim().split(/\s+/).map(p => {
+    const [x, y] = p.split(',').map(Number)
+    return [x, y] as [number, number]
+  })
+  return {
+    vertices,
+    open:  svg.getAttribute('data-open') === 'true',
+    emoji: svg.getAttribute('data-emoji') ?? '',
+    label: svg.getAttribute('data-label') ?? '',
+  }
+}
+
+const SHAPE_DEFS: ShapeDef[] = Object.keys(_rawShapeSVGs).sort().map(k => _parseSVGShape(_rawShapeSVGs[k]))
 
 // Tracks which SHAPE_DEFS indices have been used this browser session
 const _usedShapeIndices = new Set<number>()
