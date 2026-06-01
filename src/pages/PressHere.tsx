@@ -2417,7 +2417,9 @@ const CH3_OBS_W    = 60      // all obstacles same width px
 const CH3_OBS_H    = 80      // all obstacles same height px
 
 function Ch3Page1({ winTarget = CH3_WIN, variant = 'normal' }: { winTarget?: number; variant?: 'normal' | 'hard' } = {}) {
-  const active    = useContext(PageActiveCtx)
+  const active     = useContext(PageActiveCtx)
+  const isLandscape = useIsLandscape()
+  const vw         = useWindowWidth()
   const canvasRef  = useRef<HTMLDivElement>(null)
   const dimsRef    = useRef({ cw: 960, ch: 520 })
   const rafRef     = useRef<number | null>(null)
@@ -2576,6 +2578,9 @@ function Ch3Page1({ winTarget = CH3_WIN, variant = 'normal' }: { winTarget?: num
   const dead = deadRef.current
   const run  = runRef.current
 
+  // On small portrait screens the game is unplayable — ask the user to rotate
+  const needsLandscape = !isLandscape && vw < 600
+
   return (
     <>
       <div
@@ -2583,6 +2588,20 @@ function Ch3Page1({ winTarget = CH3_WIN, variant = 'normal' }: { winTarget?: num
         onClick={won ? undefined : handleAction}
         style={{ ...canvasStyle, cursor: won ? 'default' : 'pointer', overflow: 'hidden' }}
       >
+        {/* Rotate-device overlay for portrait mobile */}
+        {needsLandscape && (
+          <div style={{
+            position: 'absolute', inset: 0, display: 'flex', flexDirection: 'column',
+            alignItems: 'center', justifyContent: 'center', gap: 12,
+            background: '#fff', zIndex: 20, pointerEvents: 'none',
+          }}>
+            <div style={{ fontSize: 48 }}>📱</div>
+            <div style={{ fontSize: 16, fontWeight: 700, color: '#888', textAlign: 'center', padding: '0 24px', fontFamily: 'inherit' }}>
+              Rotate to landscape to play!
+            </div>
+          </div>
+        )}
+
         {/* Sun — fixed in sky, slowly spinning */}
         <img
           src={import.meta.env.BASE_URL + 'sun.svg'}
@@ -3056,15 +3075,39 @@ function Ch3Page2({ winTarget = C3P2_WIN, variant = 'normal' }: { winTarget?: nu
           </div>
         )}
 
+        {/* Left/right tap zone hints — always visible until started */}
+        {!started && !dead && !won && (
+          <>
+            <div style={{
+              position: 'absolute', left: 0, top: 0, bottom: 0, width: '50%',
+              display: 'flex', alignItems: 'flex-end', justifyContent: 'center',
+              paddingBottom: 20, pointerEvents: 'none',
+            }}>
+              <span style={{ fontSize: 28, opacity: 0.18 }}>←</span>
+            </div>
+            <div style={{
+              position: 'absolute', right: 0, top: 0, bottom: 0, width: '50%',
+              display: 'flex', alignItems: 'flex-end', justifyContent: 'center',
+              paddingBottom: 20, pointerEvents: 'none',
+            }}>
+              <span style={{ fontSize: 28, opacity: 0.18 }}>→</span>
+            </div>
+          </>
+        )}
+
         {/* Start hint */}
         {!started && !dead && !won && (
           <div style={{
             position: 'absolute', left: '50%', top: '42%',
             transform: 'translate(-50%, -50%)',
-            fontSize: 17, fontWeight: 700, color: YELLOW,
-            fontFamily: 'inherit', pointerEvents: 'none',
+            textAlign: 'center', pointerEvents: 'none',
           }}>
-            Press or tap to start!
+            <div style={{ fontSize: 17, fontWeight: 700, color: YELLOW, fontFamily: 'inherit' }}>
+              Tap to start!
+            </div>
+            <div style={{ fontSize: 12, color: '#aaa', marginTop: 6, fontFamily: 'inherit' }}>
+              tap left / right to move
+            </div>
           </div>
         )}
 
@@ -4081,33 +4124,22 @@ function dtSegCross(ax:number,ay:number,bx:number,by:number,cx:number,cy:number,
   return ((d1>0&&d2<0)||(d1<0&&d2>0))&&((d3>0&&d4<0)||(d3<0&&d4>0))
 }
 
-function dtBuildGraph(dots: {x:number;y:number}[]) {
-  const N = dots.length
-  const allEdges: [number,number][] = []
-  for (let i=0;i<N;i++) for (let j=i+1;j<N;j++) allEdges.push([i,j])
-  allEdges.sort(([a,b],[c,d]) =>
-    Math.hypot(dots[b].x-dots[a].x,dots[b].y-dots[a].y) -
-    Math.hypot(dots[d].x-dots[c].x,dots[d].y-dots[c].y))
-
-  const edges: [number,number][] = []
-  for (const [i,j] of allEdges) {
-    if (!edges.some(([a,b]) =>
-      a!==i&&a!==j&&b!==i&&b!==j &&
-      dtSegCross(dots[i].x,dots[i].y,dots[j].x,dots[j].y,
-                 dots[a].x,dots[a].y,dots[b].x,dots[b].y)
-    )) edges.push([i,j])
+/** Returns true if candidate point (px,py) is nearly collinear with any existing pair.
+ *  "Nearly collinear" = triangle height < 18 viewBox units (prevents very slim triangles). */
+function dtNearlyCollinear(px: number, py: number, existing: {x:number;y:number}[]): boolean {
+  const N = existing.length
+  for (let i = 0; i < N; i++) {
+    for (let j = i+1; j < N; j++) {
+      const ax = existing[j].x - existing[i].x
+      const ay = existing[j].y - existing[i].y
+      const base = Math.hypot(ax, ay)
+      if (base < 1) continue
+      // height = 2 * area / base
+      const area = Math.abs(ax*(py - existing[i].y) - ay*(px - existing[i].x))
+      if (area / base < 18) return true
+    }
   }
-
-  const adj: Set<number>[] = Array.from({length:N},()=>new Set())
-  for (const [a,b] of edges) { adj[a].add(b); adj[b].add(a) }
-
-  const triangles: [number,number,number][] = []
-  for (let a=0;a<N;a++)
-    for (const b of adj[a]) if (b>a)
-      for (const c of adj[b]) if (c>b&&adj[a].has(c))
-        triangles.push([a,b,c])
-
-  return { edges, triangles }
+  return false
 }
 
 function dtGenerateDots(): {x:number;y:number}[] {
@@ -4115,14 +4147,33 @@ function dtGenerateDots(): {x:number;y:number}[] {
   const minD  = avail/Math.sqrt(DT_N)*0.72
   const dots: {x:number;y:number}[] = []
   let tries = 0
-  while (dots.length < DT_N && tries < 2000) {
+  while (dots.length < DT_N && tries < 6000) {
     tries++
     const x = DT_PAD + Math.random()*avail
     const y = DT_PAD + Math.random()*avail
-    if (dots.every(d => Math.hypot(d.x-x,d.y-y) > minD)) dots.push({x,y})
+    if (dots.every(d => Math.hypot(d.x-x,d.y-y) > minD) && !dtNearlyCollinear(x, y, dots))
+      dots.push({x,y})
   }
-  while (dots.length < DT_N) dots.push({x:DT_PAD+Math.random()*avail, y:DT_PAD+Math.random()*avail})
+  // Fallback: relax spacing but keep anti-collinearity
+  while (dots.length < DT_N) {
+    const x = DT_PAD + Math.random()*avail
+    const y = DT_PAD + Math.random()*avail
+    if (!dtNearlyCollinear(x, y, dots)) dots.push({x,y})
+  }
   return dots
+}
+
+/** Returns true if proposed edge (ai,bi) crosses any edge in drawnPairs (sharing an endpoint is OK). */
+function dtEdgeCrossesDrawn(
+  ai: number, bi: number,
+  dots: {x:number;y:number}[],
+  drawnPairs: [number,number][]
+): boolean {
+  return drawnPairs.some(([a,b]) =>
+    a!==ai && a!==bi && b!==ai && b!==bi &&
+    dtSegCross(dots[ai].x,dots[ai].y,dots[bi].x,dots[bi].y,
+               dots[a].x, dots[a].y, dots[b].x, dots[b].y)
+  )
 }
 
 function DotTrianglesPage() {
@@ -4140,15 +4191,30 @@ function DotTrianglesPage() {
   const [dragPt,  setDragPt]  = useState<{x:number;y:number}|null>(null)
   const svgRef = useRef<SVGSVGElement>(null)
 
-  const { dots, validEdges, validTriangles } = useMemo(() => {
-    const d = dtGenerateDots()
-    const { edges, triangles } = dtBuildGraph(d)
-    return { dots: d, validEdges: edges, validTriangles: triangles }
-  }, [gameId])
+  const dots = useMemo(() => dtGenerateDots(), [gameId])
 
-  const validEdgeKeySet = useMemo(
-    () => new Set(validEdges.map(([a,b]) => dtEdgeKey(a,b))),
-    [validEdges])
+  // Drawn edges as [a,b] pairs for crossing checks
+  const drawnPairs = useMemo(
+    () => Array.from(usedEdges).map(k => k.split(',').map(Number) as [number,number]),
+    [usedEdges])
+
+  // All edges that can still be legally drawn (not yet drawn, doesn't cross any drawn edge)
+  const availEdges = useMemo(() => {
+    const N = dots.length
+    const avail: [number,number][] = []
+    for (let i=0; i<N; i++) for (let j=i+1; j<N; j++) {
+      if (usedEdges.has(dtEdgeKey(i,j))) continue
+      if (!dtEdgeCrossesDrawn(i, j, dots, drawnPairs)) avail.push([i,j])
+    }
+    return avail
+  }, [dots, usedEdges, drawnPairs])
+
+  // Dots that can be dragged (have at least one available edge)
+  const draggableDots = useMemo(() => {
+    const s = new Set<number>()
+    for (const [a,b] of availEdges) { s.add(a); s.add(b) }
+    return s
+  }, [availEdges])
 
   const P_COLOR: Record<'X'|'O', string> = { X: BLUE, O: RED }
 
@@ -4164,41 +4230,54 @@ function DotTrianglesPage() {
     if (usedEdges.has(key)) return
     const newUsed = new Set([...usedEdges, key])
     const newOwner = { ...edgeOwner, [key]: who }
-    const newTris = validTriangles.filter(([ta,tb,tc]) => {
-      const ks = [dtEdgeKey(ta,tb),dtEdgeKey(tb,tc),dtEdgeKey(ta,tc)]
-      return ks.every(k => newUsed.has(k)) && !ks.every(k => usedEdges.has(k))
-    })
+    // Triangles newly completed: find all c where (a,c) and (b,c) were already drawn
+    const newTris: [number,number,number][] = []
+    for (let c=0; c<dots.length; c++) {
+      if (c===a || c===b) continue
+      if (usedEdges.has(dtEdgeKey(a,c)) && usedEdges.has(dtEdgeKey(b,c))) {
+        const tri = [a,b,c].sort((x,y)=>x-y) as [number,number,number]
+        newTris.push(tri)
+      }
+    }
     const newClaimed = [...claimed, ...newTris.map(tri => ({ tri, player: who }))]
     const nx = scoreX + (who==='X' ? newTris.length : 0)
     const no = scoreO + (who==='O' ? newTris.length : 0)
     setUsedEdges(newUsed); setEdgeOwner(newOwner); setClaimed(newClaimed)
     setScoreX(nx); setScoreO(no); setSelDot(null); setDragPt(null)
-    const remaining = validEdges.filter(([ea,eb]) => !newUsed.has(dtEdgeKey(ea,eb)))
-    if (remaining.length === 0) { setGameOver(true) }
+    // Recompute available edges after this addition to check game over
+    const newDrawnPairs = [...drawnPairs, [a,b] as [number,number]]
+    // Check if any edges can still be drawn after this move
+    let hasAny = false
+    const N = dots.length
+    outer: for (let i=0; i<N && !hasAny; i++) for (let j=i+1; j<N && !hasAny; j++) {
+      if (newUsed.has(dtEdgeKey(i,j))) continue
+      if (!dtEdgeCrossesDrawn(i,j,dots,newDrawnPairs)) { hasAny=true; break outer }
+    }
+    if (!hasAny) { setGameOver(true) }
     else if (newTris.length === 0) { setCurrent(who === 'X' ? 'O' : 'X') }
-    // else same player goes again
+    // else same player goes again (scored a triangle)
   }
 
-  // Computer move
+  // Computer move — prefers edges that complete the most triangles
   useEffect(() => {
     if (mode !== 'computer' || current !== 'O' || gameOver) return
-    const avail = validEdges.filter(([a,b]) => !usedEdges.has(dtEdgeKey(a,b)))
-    if (avail.length === 0) return
+    if (availEdges.length === 0) return
     const t = setTimeout(() => {
-      // Prefer edges that complete triangles
-      let best = avail[0], bestN = -1
-      for (const [a,b] of avail) {
+      let best = availEdges[0], bestN = -1
+      for (const [a,b] of availEdges) {
         const k = dtEdgeKey(a,b)
         const tmp = new Set([...usedEdges, k])
-        const n = validTriangles.filter(([ta,tb,tc]) =>
-          [dtEdgeKey(ta,tb),dtEdgeKey(tb,tc),dtEdgeKey(ta,tc)].every(x => tmp.has(x))
-        ).length
+        let n = 0
+        for (let c=0; c<dots.length; c++) {
+          if (c===a||c===b) continue
+          if (usedEdges.has(dtEdgeKey(a,c)) && usedEdges.has(dtEdgeKey(b,c))) n++
+        }
         if (n > bestN) { bestN = n; best = [a,b] }
       }
       commitEdge(best[0], best[1], 'O')
     }, 550)
     return () => clearTimeout(t)
-  }, [mode, current, gameOver, usedEdges, validEdges, validTriangles])
+  }, [mode, current, gameOver, usedEdges, availEdges])  // eslint-disable-line react-hooks/exhaustive-deps
 
   function toSVGPt(e: React.PointerEvent) {
     const svg = svgRef.current; if (!svg) return null
@@ -4208,10 +4287,11 @@ function DotTrianglesPage() {
 
   function nearestAvailDot(pt:{x:number;y:number}, from:number, thresh:number) {
     let best: number|null = null, bestD = thresh
-    for (let i=0;i<dots.length;i++) {
+    for (let i=0; i<dots.length; i++) {
       if (i===from) continue
       const k = dtEdgeKey(from,i)
-      if (!validEdgeKeySet.has(k) || usedEdges.has(k)) continue
+      if (usedEdges.has(k)) continue
+      if (dtEdgeCrossesDrawn(from, i, dots, drawnPairs)) continue
       const d = Math.hypot(dots[i].x-pt.x, dots[i].y-pt.y)
       if (d<bestD) { bestD=d; best=i }
     }
@@ -4247,9 +4327,8 @@ function DotTrianglesPage() {
       ))}
 
       {/* Drawn edges */}
-      {validEdges.map(([a,b]) => {
-        const k = dtEdgeKey(a,b)
-        const own = edgeOwner[k]; if (!own) return null
+      {Object.entries(edgeOwner).map(([k, own]) => {
+        const [a,b] = k.split(',').map(Number)
         return <line key={k} x1={dots[a].x} y1={dots[a].y} x2={dots[b].x} y2={dots[b].y}
           stroke={P_COLOR[own]} strokeWidth={3} strokeLinecap="round" />
       })}
@@ -4268,8 +4347,7 @@ function DotTrianglesPage() {
       {dots.map((d,i) => {
         const isSel  = selDot===i
         const isSnap = snapDot===i
-        const canDrag = isHumanTurn &&
-          validEdges.some(([a,b]) => (a===i||b===i) && !usedEdges.has(dtEdgeKey(a,b)))
+        const canDrag = isHumanTurn && draggableDots.has(i)
         return <circle key={i} cx={d.x} cy={d.y}
           r={isSel||isSnap ? CH4_DOT_SEL : CH4_DOT_R}
           fill={isSel ? P_COLOR[current] : isSnap ? P_COLOR[current]+'cc' : '#ccc'}
