@@ -2404,8 +2404,8 @@ type RunObs = { id: number; xPct: number; wPx: number; hPx: number; passed?: boo
 
 const CH3_DOT_PX   = 44
 const CH3_GROUND   = 78      // % from top of canvas
-const CH3_JUMP_V   = 1.8     // %/frame initial upward velocity (soft arc)
-const CH3_GRAV     = 0.09    // %/frame² gravity (gentle)
+const CH3_JUMP_V   = 2.2     // %/frame initial upward velocity — arc ~28% of canvas height
+const CH3_GRAV     = 0.085   // %/frame² gravity (gentle)
 const CH3_SPD0     = 0.40    // %/frame initial obstacle speed
 const CH3_ACCEL    = 0.00005
 const CH3_MAX_SPD  = 0.90
@@ -2418,10 +2418,11 @@ const CH3_OBS_H    = 80      // all obstacles same height px
 
 function Ch3Page1({ winTarget = CH3_WIN, variant = 'normal' }: { winTarget?: number; variant?: 'normal' | 'hard' } = {}) {
   const active    = useContext(PageActiveCtx)
-  const canvasRef = useRef<HTMLDivElement>(null)
-  const dimsRef   = useRef({ cw: 960, ch: 520 })
-  const rafRef    = useRef<number | null>(null)
-  const [, tick]  = useState(0)
+  const canvasRef  = useRef<HTMLDivElement>(null)
+  const dimsRef    = useRef({ cw: 960, ch: 520 })
+  const rafRef     = useRef<number | null>(null)
+  const lastTRef   = useRef(0)               // timestamp of previous RAF frame
+  const [, tick]   = useState(0)
 
   const yRef        = useRef(CH3_GROUND)   // player BOTTOM edge y in % (starts on ground)
   const vyRef       = useRef(0)            // velocity %/frame (positive = down)
@@ -2458,17 +2459,22 @@ function Ch3Page1({ winTarget = CH3_WIN, variant = 'normal' }: { winTarget?: num
       if (rafRef.current) { cancelAnimationFrame(rafRef.current); rafRef.current = null }
       return
     }
+    lastTRef.current = performance.now()
     let alive = true
-    const step = () => {
+    const step = (now: number) => {
       if (!alive) return
+      // Delta-time: normalise to 60 fps so physics is frame-rate independent
+      const dt     = Math.min(now - lastTRef.current, 50)   // cap at 50 ms (tab focus-loss)
+      lastTRef.current = now
+      const frames = dt * 60 / 1000                         // 1.0 at 60 fps, 0.5 at 120 fps
 
       if (runRef.current && !wonRef.current && !deadRef.current) {
         const { cw, ch } = dimsRef.current
         const gndPx = CH3_GROUND / 100 * ch
 
         // Gravity
-        vyRef.current = Math.min(vyRef.current + CH3_GRAV, 5)
-        yRef.current += vyRef.current
+        vyRef.current = Math.min(vyRef.current + CH3_GRAV * frames, 5)
+        yRef.current += vyRef.current * frames
         if (yRef.current >= CH3_GROUND) {
           yRef.current = CH3_GROUND; vyRef.current = 0
           // Flush mountains passed mid-air as confirmed jumps on landing
@@ -2479,12 +2485,12 @@ function Ch3Page1({ winTarget = CH3_WIN, variant = 'normal' }: { winTarget?: num
         }
 
         // Accelerate + distance (hard mode: gently faster accel)
-        spdRef.current  = Math.min(spdRef.current + (variant === 'hard' ? CH3_ACCEL * 1.4 : CH3_ACCEL), CH3_MAX_SPD)
-        distRef.current += spdRef.current
+        spdRef.current  = Math.min(spdRef.current + (variant === 'hard' ? CH3_ACCEL * 1.4 : CH3_ACCEL) * frames, CH3_MAX_SPD)
+        distRef.current += spdRef.current * frames
 
         // Move obstacles; o.xPct is the CENTRE x (SVG uses translate(-50%,-100%))
         for (const o of obsRef.current) {
-          o.xPct -= spdRef.current
+          o.xPct -= spdRef.current * frames
           // Mountain passed dot centre — stage it as pending until dot lands
           if (!o.passed && o.xPct < CH3_PX) {
             o.passed = true
@@ -2496,7 +2502,7 @@ function Ch3Page1({ winTarget = CH3_WIN, variant = 'normal' }: { winTarget?: num
 
         // Spawn (hard mode: gap shrinks as more mountains are jumped)
         if (distRef.current >= nextSpRef.current) {
-          // Scale obstacle to canvas so mountains are always jumpable (jump arc = 18% of ch)
+          // Scale obstacle to canvas so mountains are always jumpable (jump arc ≈ 28% of ch)
           const obsH = Math.round(ch * 0.13)
           const obsW = Math.round(obsH * (CH3_OBS_W / CH3_OBS_H))
           obsRef.current.push({
@@ -2764,6 +2770,7 @@ function Ch3Page2({ winTarget = C3P2_WIN, variant = 'normal' }: { winTarget?: nu
   const canvasRef = useRef<HTMLDivElement>(null)
   const dimsRef   = useRef({ cw: 960, ch: 520 })
   const rafRef    = useRef<number | null>(null)
+  const lastTRef  = useRef(0)
   const [, tick]  = useState(0)
 
   // Player (world coords)
@@ -2836,10 +2843,15 @@ function Ch3Page2({ winTarget = C3P2_WIN, variant = 'normal' }: { winTarget?: nu
     }
     const { cw, ch } = dimsRef.current
     initGame(cw, ch)
+    lastTRef.current = performance.now()
     let alive = true
-    const step = () => {
+    const step = (now: number) => {
       if (!alive) return
       const { cw, ch } = dimsRef.current
+      // Delta-time normalised to 60 fps
+      const dt     = Math.min(now - lastTRef.current, 50)
+      lastTRef.current = now
+      const frames = dt * 60 / 1000
 
       if (!wonRef.current && !deadRef.current && startedRef.current) {
         // ── 0. Ping-pong cloud update (hard mode) ────────────────────────────
@@ -2853,7 +2865,7 @@ function Ch3Page2({ winTarget = C3P2_WIN, variant = 'normal' }: { winTarget?: nu
               if (c.ppSpeed === undefined) continue
 
               const prevX = c.x
-              c.x += c.ppSpeed * c.ppDir!
+              c.x += c.ppSpeed * c.ppDir! * frames
 
               // Wall bounce
               if (c.x <= c.ppMin!) { c.x = c.ppMin!; c.ppDir = 1 }
@@ -2884,7 +2896,7 @@ function Ch3Page2({ winTarget = C3P2_WIN, variant = 'normal' }: { winTarget?: nu
 
         // ── 1. Horizontal movement ───────────────────────────────────────────
         const dx = (leftRef.current ? -1 : 0) + (rightRef.current ? 1 : 0)
-        pxRef.current = Math.max(C3P2_R, Math.min(cw - C3P2_R, pxRef.current + dx * C3P2_SPD))
+        pxRef.current = Math.max(C3P2_R, Math.min(cw - C3P2_R, pxRef.current + dx * C3P2_SPD * frames))
 
         // ── 2. On-floor: did player walk off every cloud? ───────────────────
         if (onFloorRef.current >= 0) {
@@ -2896,9 +2908,9 @@ function Ch3Page2({ winTarget = C3P2_WIN, variant = 'normal' }: { winTarget?: nu
 
         // ── 3. Airborne: gravity + floor landing ─────────────────────────────
         if (onFloorRef.current < 0) {
-          vyRef.current = Math.min(vyRef.current + C3P2_GRAV, C3P2_MAX_VY)
+          vyRef.current = Math.min(vyRef.current + C3P2_GRAV * frames, C3P2_MAX_VY)
           const prevY      = pyRef.current
-          pyRef.current   += vyRef.current
+          pyRef.current   += vyRef.current * frames
 
           if (vyRef.current > 0) {
             const prevBottom = prevY + C3P2_R
@@ -2925,7 +2937,7 @@ function Ch3Page2({ winTarget = C3P2_WIN, variant = 'normal' }: { winTarget?: nu
 
         // ── 5. Scroll camera upward (hard mode: speed increases with progress) ─
         const scrollSpd = variant === 'hard' ? Math.min(C3P2_SCROLL + clearedRef.current * 0.015, 1.4) : C3P2_SCROLL
-        camYRef.current += scrollSpd
+        camYRef.current += scrollSpd * frames
 
         // ── 6. Death: ball fell below bottom of screen ───────────────────────
         if (pyRef.current - C3P2_R > camYRef.current + ch) {
@@ -3148,6 +3160,7 @@ function Ch3Page3({ winTarget = C3P3_WIN_DIST, variant = 'normal' }: { winTarget
   const cvRef    = useRef<HTMLCanvasElement>(null)
   const dimsRef  = useRef({ cw: 960, ch: 520 })
   const rafRef   = useRef<number | null>(null)
+  const lastTRef = useRef(0)
   const [, tick] = useState(0)
 
   const pyRef       = useRef(260)
@@ -3199,17 +3212,22 @@ function Ch3Page3({ winTarget = C3P3_WIN_DIST, variant = 'normal' }: { winTarget
     initGame(cw, ch)
     if (cvRef.current) { cvRef.current.width = Math.round(cw); cvRef.current.height = Math.round(ch) }
 
+    lastTRef.current = performance.now()
     let alive = true
-    const step = () => {
+    const step = (now: number) => {
       if (!alive) return
       const { cw, ch } = dimsRef.current
       const dotX = cw * C3P3_DOT_X_F
+      // Delta-time normalised to 60 fps
+      const dt     = Math.min(now - lastTRef.current, 50)
+      lastTRef.current = now
+      const frames = dt * 60 / 1000
 
       // ── Physics ─────────────────────────────────────────────────────────────
       if (runRef.current && !wonRef.current && !deadRef.current) {
-        vyRef.current = Math.min(vyRef.current + C3P3_GRAV, C3P3_MAX_VY)
-        pyRef.current += vyRef.current
-        framesRef.current++
+        vyRef.current = Math.min(vyRef.current + C3P3_GRAV * frames, C3P3_MAX_VY)
+        pyRef.current += vyRef.current * frames
+        framesRef.current += frames   // time in 60-fps-equivalent units
 
         // Hard mode: speed, gap, and jaggedness all increase over time
         const dynSpd    = variant === 'hard' ? Math.min(C3P3_SPD * 2.5, C3P3_SPD + framesRef.current * 0.001) : C3P3_SPD
@@ -3217,7 +3235,7 @@ function Ch3Page3({ winTarget = C3P3_WIN_DIST, variant = 'normal' }: { winTarget
         const dynDrift  = variant === 'hard' ? Math.min(C3P3_DRIFT * 5, C3P3_DRIFT + framesRef.current * 0.018) : C3P3_DRIFT
 
         // Scroll terrain left
-        for (const s of segsRef.current) s.x -= dynSpd
+        for (const s of segsRef.current) s.x -= dynSpd * frames
         segsRef.current = segsRef.current.filter(s => s.x > -C3P3_SEG_SP * 2)
 
         // Generate new segments at the right edge
@@ -4891,6 +4909,9 @@ export default function PressHere() {
   const [caption,    setCaption]   = useState<React.ReactNode>('')
   const [done,       setDone]      = useState(false)
   const [globalKey,  setGlobalKey] = useState(0)
+  // Lazy mounting: only pages that have been visited are mounted in the DOM.
+  // Always pre-mount page 0 and 1 so the first navigation is instant.
+  const [mountedPages, setMountedPages] = useState<Set<number>>(() => new Set([0, 1]))
   const [wellDone,   setWellDone]  = useState(false)
   const [chapter,    setChapter]   = useState(() => {
     const m = window.location.pathname.match(/\/ch(\d+)/)
@@ -4909,6 +4930,11 @@ export default function PressHere() {
     window.history.replaceState(null, '', `/press-here/ch${chapter}`)
   }, [chapter])
 
+  // Reset mounted-page set whenever the chapter restarts (globalKey bumped)
+  useEffect(() => {
+    setMountedPages(new Set([0, 1]))
+  }, [globalKey])  // eslint-disable-line react-hooks/exhaustive-deps
+
   const vw = useWindowWidth()
   const isMobile = vw < 480
   const dotSize  = Math.max(36, Math.min(80, Math.floor(vw * 0.12)))
@@ -4921,6 +4947,13 @@ export default function PressHere() {
   function nav(next: number) {
     setPage(next)
     setDone(false)
+    // Pre-mount the navigated page and the one after it
+    setMountedPages(prev => {
+      const s = new Set(prev)
+      s.add(next)
+      if (next + 1 < activePages.length) s.add(next + 1)
+      return s
+    })
   }
 
   function reset() {
@@ -5088,17 +5121,20 @@ export default function PressHere() {
               </div>
             </div>
 
-            {/* Canvas area — all pages mounted; display toggled for active page */}
+            {/* Canvas area — pages are lazily mounted on first visit to reduce startup cost */}
             <div ref={canvasAreaRef} key={globalKey} style={{ flex: 1, minHeight: 0, position: 'relative' }}>
-              {activePages.map((P, i) => (
-                <PageActiveCtx.Provider key={i} value={i === page}>
-                  <div style={{
-                    position: 'absolute', inset: 0, display: i === page ? 'flex' : 'none', flexDirection: 'column',
-                  }}>
-                    <P />
-                  </div>
-                </PageActiveCtx.Provider>
-              ))}
+              {activePages.map((P, i) => {
+                if (!mountedPages.has(i)) return <div key={i} style={{ display: 'none' }} />
+                return (
+                  <PageActiveCtx.Provider key={i} value={i === page}>
+                    <div style={{
+                      position: 'absolute', inset: 0, display: i === page ? 'flex' : 'none', flexDirection: 'column',
+                    }}>
+                      <P />
+                    </div>
+                  </PageActiveCtx.Provider>
+                )
+              })}
             </div>
 
             {/* Caption row — caption left-aligned, Next button pinned to the right */}
