@@ -2432,8 +2432,8 @@ const CH3_OBS_H    = 80      // all obstacles same height px
 
 function Ch3Page1({ winTarget = CH3_WIN, variant = 'normal' }: { winTarget?: number; variant?: 'normal' | 'hard' } = {}) {
   const active     = useContext(PageActiveCtx)
-  const isLandscape = useIsLandscape()
-  const vw         = useWindowWidth()
+  const outerRef   = useRef<HTMLDivElement>(null)
+  const [outerDims, setOuterDims] = useState({ w: 0, h: 0 })
   const canvasRef  = useRef<HTMLDivElement>(null)
   const dimsRef    = useRef({ cw: 960, ch: 520 })
   const rafRef     = useRef<number | null>(null)
@@ -2459,6 +2459,15 @@ function Ch3Page1({ winTarget = CH3_WIN, variant = 'normal' }: { winTarget?: num
     s.textContent = '@keyframes ch3SunSpin{from{transform:rotate(0deg)}to{transform:rotate(360deg)}}'
     document.head.appendChild(s)
     return () => { document.head.removeChild(s) }
+  }, [])
+
+  useLayoutEffect(() => {
+    const el = outerRef.current; if (!el) return
+    const ro = new ResizeObserver(entries => {
+      const { width: w, height: h } = entries[0].contentRect
+      if (w > 0 && h > 0) setOuterDims({ w, h })
+    })
+    ro.observe(el); return () => ro.disconnect()
   }, [])
 
   useLayoutEffect(() => {
@@ -2592,29 +2601,29 @@ function Ch3Page1({ winTarget = CH3_WIN, variant = 'normal' }: { winTarget?: num
   const dead = deadRef.current
   const run  = runRef.current
 
-  // On small portrait screens the game is unplayable — ask the user to rotate
-  const needsLandscape = !isLandscape && vw < 600
+  const portrait = outerDims.h > outerDims.w && outerDims.w > 0
 
   return (
     <>
       <div
+        ref={outerRef}
+        style={{ ...canvasStyle, position: 'relative', overflow: 'hidden' }}
+      >
+      <div
         ref={canvasRef}
         onClick={won ? undefined : handleAction}
-        style={{ ...canvasStyle, cursor: won ? 'default' : 'pointer', overflow: 'hidden' }}
+        style={{
+          position: 'absolute',
+          ...(portrait ? {
+            width: outerDims.h, height: outerDims.w,
+            left: (outerDims.w - outerDims.h) / 2,
+            top: (outerDims.h - outerDims.w) / 2,
+            transform: 'rotate(90deg)', transformOrigin: 'center',
+          } : { inset: 0 }),
+          background: '#fff', overflow: 'hidden',
+          cursor: won ? 'default' : 'pointer',
+        }}
       >
-        {/* Rotate-device overlay for portrait mobile */}
-        {needsLandscape && (
-          <div style={{
-            position: 'absolute', inset: 0, display: 'flex', flexDirection: 'column',
-            alignItems: 'center', justifyContent: 'center', gap: 12,
-            background: '#fff', zIndex: 20, pointerEvents: 'none',
-          }}>
-            <div style={{ fontSize: 48 }}>📱</div>
-            <div style={{ fontSize: 16, fontWeight: 700, color: '#888', textAlign: 'center', padding: '0 24px', fontFamily: 'inherit' }}>
-              Rotate to landscape to play!
-            </div>
-          </div>
-        )}
 
         {/* Sun — fixed in sky, slowly spinning */}
         <img
@@ -2717,6 +2726,7 @@ function Ch3Page1({ winTarget = CH3_WIN, variant = 'normal' }: { winTarget?: num
             >↺ Play again</button>
           </div>
         )}
+      </div>
       </div>
       <IntroText>Jump over the obstacles!</IntroText>
       <SetDone done={wonRef.current} />
@@ -2863,10 +2873,17 @@ function Ch3Page2({ winTarget = C3P2_WIN, variant = 'normal' }: { winTarget?: nu
     const el = canvasRef.current; if (!el) return
     const ro = new ResizeObserver(entries => {
       const { width: cw, height: ch } = entries[0].contentRect
-      if (cw > 0 && ch > 0) dimsRef.current = { cw, ch }
+      if (cw > 0 && ch > 0) {
+        dimsRef.current = { cw, ch }
+        // Re-init platforms with correct canvas size if game hasn't started yet
+        if (!startedRef.current && !wonRef.current) {
+          initGame(cw, ch)
+          tick(n => n + 1)
+        }
+      }
     })
     ro.observe(el); return () => ro.disconnect()
-  }, [])
+  }, []) // eslint-disable-line react-hooks/exhaustive-deps
 
   useEffect(() => {
     if (!active) {
