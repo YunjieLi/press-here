@@ -1216,27 +1216,41 @@ function Chapter2Page1() {
   }, [])
 
   // ── Merge sequence (auto-triggered on activation) ─────────────────────────
+  const mergeTimersRef = useRef<ReturnType<typeof setTimeout>[]>([])
+
+  function cancelMergeTimers() {
+    mergeTimersRef.current.forEach(clearTimeout)
+    mergeTimersRef.current = []
+  }
+
+  // Cancel timers on unmount
+  useEffect(() => () => cancelMergeTimers(), []) // eslint-disable-line react-hooks/exhaustive-deps
+
   function startMerge() {
     if (phaseRef.current !== 'idle') return
     phaseRef.current = 'merging'; setPhase('merging')
-    setTimeout(() => {
+    const t1 = setTimeout(() => {
       phaseRef.current = 'merged'; setPhase('merged')
-      setTimeout(() => {
+      const t2 = setTimeout(() => {
         phaseRef.current = 'shining'; setPhase('shining')
         // basket turns rainbow exactly when beam animation ends (1900ms)
-        setTimeout(() => {
+        const t3 = setTimeout(() => {
           phaseRef.current = 'lit'; setPhase('lit')
-          setTimeout(() => {
+          const t4 = setTimeout(() => {
             phaseRef.current = 'rainbow'; setPhase('rainbow')
           }, 350)   // brief pause then clickable
+          mergeTimersRef.current.push(t4)
         }, 1900)   // beam animation duration
+        mergeTimersRef.current.push(t3)
       }, 680)      // wait for basketPop
+      mergeTimersRef.current.push(t2)
     }, 700)        // wait for slide
+    mergeTimersRef.current.push(t1)
   }
 
-  // Auto-trigger merge when page becomes active
+  // Auto-trigger merge when page becomes active; cancel if it goes inactive
   useEffect(() => {
-    if (!active) return
+    if (!active) { cancelMergeTimers(); return }
     const t = setTimeout(startMerge, 400)   // small delay so page is visible first
     return () => clearTimeout(t)
   }, [active]) // eslint-disable-line react-hooks/exhaustive-deps
@@ -3577,6 +3591,286 @@ function tttAIMove(board: TTTCell[]): number {
 
 type TTTMode = 'computer' | 'two-player'
 
+function Ch4RulesModal({ title, onClose, children }: {
+  title: string; onClose: () => void; children: React.ReactNode
+}) {
+  useEffect(() => {
+    const h = (e: KeyboardEvent) => { if (e.key === 'Escape') onClose() }
+    window.addEventListener('keydown', h)
+    return () => window.removeEventListener('keydown', h)
+  }, [onClose])
+  return (
+    <div
+      style={{
+        position: 'fixed', inset: 0, zIndex: 1000,
+        background: 'rgba(0,0,0,0.38)', backdropFilter: 'blur(3px)',
+        display: 'flex', alignItems: 'center', justifyContent: 'center',
+        padding: 24, boxSizing: 'border-box',
+      }}
+      onClick={onClose}
+    >
+      <div
+        onClick={e => e.stopPropagation()}
+        style={{
+          background: '#fff', borderRadius: 20, padding: '28px 30px',
+          maxWidth: 400, width: '100%', boxShadow: '0 12px 60px #0004',
+          fontFamily: 'inherit', maxHeight: '88vh', overflowY: 'auto',
+          boxSizing: 'border-box',
+        }}
+      >
+        <div style={{ fontSize: 18, fontWeight: 800, color: '#222', marginBottom: 14, fontFamily: 'inherit' }}>
+          {title}
+        </div>
+        <div style={{ fontSize: 14, lineHeight: 1.8, color: '#555', fontFamily: 'inherit' }}>
+          {children}
+        </div>
+        <button onClick={onClose} style={{
+          marginTop: 22, padding: '8px 24px', borderRadius: 30,
+          background: '#222', border: 'none', color: '#fff',
+          fontSize: 14, fontWeight: 700, cursor: 'pointer', fontFamily: 'inherit',
+        }}>Got it!</button>
+      </div>
+    </div>
+  )
+}
+
+function ShowRulesButton({ onClick }: { onClick: () => void }) {
+  const [hov, setHov] = useState(false)
+  return (
+    <span role="button" onClick={onClick}
+      onMouseEnter={() => setHov(true)} onMouseLeave={() => setHov(false)}
+      style={{ color: hov ? '#2d6fad' : '#5b9bd5', cursor: 'pointer', fontWeight: 600 }}>
+      Show rules
+    </span>
+  )
+}
+
+function ch4Caption(name: string, desc: string, onShowRules: () => void): React.ReactNode {
+  const punctuated = /[.!?]$/.test(desc) ? desc : desc + '.'
+  return (
+    <><span style={{ fontWeight: 700 }}>{name}:</span> {punctuated}{' '}<ShowRulesButton onClick={onShowRules} /></>
+  )
+}
+
+// ── Step-by-step diagram helpers for rules modals ───────────────────────────
+
+function RuleSteps({ steps }: { steps: { svg: React.ReactNode; label: string }[] }) {
+  return (
+    <div style={{ display: 'flex', gap: 7, margin: '12px 0 14px' }}>
+      {steps.map((step, i) => (
+        <div key={i} style={{ flex: 1, display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 5 }}>
+          <div style={{
+            width: '100%', aspectRatio: '1 / 1', border: '1.5px solid #eee',
+            borderRadius: 10, background: '#fafafa', overflow: 'hidden',
+          }}>
+            {step.svg}
+          </div>
+          <div style={{ fontSize: 10.5, color: '#888', textAlign: 'center', lineHeight: 1.35, fontFamily: 'inherit' }}>
+            {step.label}
+          </div>
+        </div>
+      ))}
+    </div>
+  )
+}
+
+// TicTacToe board snapshot
+function TttDiagram({ pieces, winCells = [] }: {
+  pieces: Array<{ c: number; r: number; type: 'X' | 'O' }>
+  winCells?: Array<[number, number]>
+}) {
+  return (
+    <svg viewBox="0 0 90 90" style={{ width: '100%', height: '100%', display: 'block' }}>
+      <rect width={90} height={90} fill="#fcfaf6"/>
+      {winCells.map(([c, r]) => (
+        <rect key={`w${c}${r}`} x={7 + c * 28} y={7 + r * 28} width={28} height={28} fill="#fff3b0"/>
+      ))}
+      <line x1={35} y1={7} x2={35} y2={83} stroke="#ddd" strokeWidth={1.5}/>
+      <line x1={63} y1={7} x2={63} y2={83} stroke="#ddd" strokeWidth={1.5}/>
+      <line x1={7} y1={35} x2={83} y2={35} stroke="#ddd" strokeWidth={1.5}/>
+      <line x1={7} y1={63} x2={83} y2={63} stroke="#ddd" strokeWidth={1.5}/>
+      {pieces.map(({ c, r, type }) => {
+        const cx = 21 + c * 28, cy = 21 + r * 28
+        return type === 'X'
+          ? <g key={`${c}${r}`}>
+              <line x1={cx - 9} y1={cy - 9} x2={cx + 9} y2={cy + 9} stroke="#5b9bd5" strokeWidth={2.5} strokeLinecap="round"/>
+              <line x1={cx + 9} y1={cy - 9} x2={cx - 9} y2={cy + 9} stroke="#5b9bd5" strokeWidth={2.5} strokeLinecap="round"/>
+            </g>
+          : <circle key={`${c}${r}`} cx={cx} cy={cy} r={9} fill="none" stroke="#e05252" strokeWidth={2.5}/>
+      })}
+    </svg>
+  )
+}
+
+// DotsAndBoxes snapshot — 2×2 boxes (3×3 dots)
+// hLines = [[col, row, player]] → horizontal edge between dot(c,r) and dot(c+1,r)
+// vLines = [[col, row, player]] → vertical edge between dot(c,r) and dot(c,r+1)
+// boxes  = [[col, row, player]] → completed filled box
+function DbDiagram({ hLines = [], vLines = [], boxes = [] }: {
+  hLines?: Array<[number, number, 'X' | 'O' | 'hint']>
+  vLines?: Array<[number, number, 'X' | 'O' | 'hint']>
+  boxes?: Array<[number, number, 'X' | 'O']>
+}) {
+  const dx = (c: number) => 15 + c * 30
+  const dy = (r: number) => 15 + r * 30
+  const lc = (p: 'X' | 'O' | 'hint') => p === 'X' ? '#5b9bd5' : p === 'O' ? '#e05252' : '#a8cff0'
+  return (
+    <svg viewBox="0 0 90 90" style={{ width: '100%', height: '100%', display: 'block' }}>
+      <rect width={90} height={90} fill="#fafaf8"/>
+      {boxes.map(([c, r, p]) => (
+        <rect key={`b${c}${r}`} x={dx(c) + 2} y={dy(r) + 2} width={26} height={26}
+          fill={p === 'X' ? '#5b9bd530' : '#e0525230'} rx={3}/>
+      ))}
+      {hLines.map(([c, r, p]) => (
+        <line key={`h${c}${r}`} x1={dx(c) + 5} y1={dy(r)} x2={dx(c + 1) - 5} y2={dy(r)}
+          stroke={lc(p)} strokeWidth={p === 'hint' ? 1.8 : 2.5} strokeLinecap="round"
+          strokeDasharray={p === 'hint' ? '5 3' : 'none'}/>
+      ))}
+      {vLines.map(([c, r, p]) => (
+        <line key={`v${c}${r}`} x1={dx(c)} y1={dy(r) + 5} x2={dx(c)} y2={dy(r + 1) - 5}
+          stroke={lc(p)} strokeWidth={p === 'hint' ? 1.8 : 2.5} strokeLinecap="round"
+          strokeDasharray={p === 'hint' ? '5 3' : 'none'}/>
+      ))}
+      {[0, 1, 2].flatMap(r => [0, 1, 2].map(c => (
+        <circle key={`d${c}${r}`} cx={dx(c)} cy={dy(r)} r={4} fill="#999"/>
+      )))}
+    </svg>
+  )
+}
+
+// DotTriangles snapshot — 5 fixed demo dots
+const _DT_DEMO_DOTS = [
+  { x: 14, y: 14 }, // 0 top-left
+  { x: 76, y: 14 }, // 1 top-right
+  { x: 76, y: 76 }, // 2 bottom-right
+  { x: 14, y: 76 }, // 3 bottom-left
+  { x: 45, y: 45 }, // 4 center
+]
+function DtDiagram({ edges = [], tris = [] }: {
+  edges?: Array<[number, number, 'X' | 'O']>
+  tris?: Array<[number, number, number, 'X' | 'O']>
+}) {
+  return (
+    <svg viewBox="0 0 90 90" style={{ width: '100%', height: '100%', display: 'block' }}>
+      <rect width={90} height={90} fill="#fafaf8"/>
+      {tris.map(([a, b, c, p], i) => {
+        const da = _DT_DEMO_DOTS[a], db = _DT_DEMO_DOTS[b], dc = _DT_DEMO_DOTS[c]
+        return <polygon key={i}
+          points={`${da.x},${da.y} ${db.x},${db.y} ${dc.x},${dc.y}`}
+          fill={p === 'X' ? '#5b9bd535' : '#e0525235'}/>
+      })}
+      {edges.map(([a, b, p], i) => {
+        const da = _DT_DEMO_DOTS[a], db = _DT_DEMO_DOTS[b]
+        return <line key={i} x1={da.x} y1={da.y} x2={db.x} y2={db.y}
+          stroke={p === 'X' ? '#5b9bd5' : '#e05252'} strokeWidth={2.5} strokeLinecap="round"/>
+      })}
+      {_DT_DEMO_DOTS.map((d, i) => (
+        <circle key={i} cx={d.x} cy={d.y} r={5} fill="#aaa"/>
+      ))}
+    </svg>
+  )
+}
+
+// RectangleGame snapshot — 3×3 dot grid
+// rects = [[r1, c1, r2, c2, player]] → placed rectangles
+// draftRect = [r1, c1, r2, c2] → in-progress drag preview
+function RgDiagram({ rects = [], draftRect }: {
+  rects?: Array<[number, number, number, number, 'X' | 'O']>
+  draftRect?: [number, number, number, number]
+}) {
+  const dx = (c: number) => 15 + c * 30
+  const dy = (r: number) => 15 + r * 30
+  return (
+    <svg viewBox="0 0 90 90" style={{ width: '100%', height: '100%', display: 'block' }}>
+      <rect width={90} height={90} fill="#fafaf8"/>
+      {rects.map(([r1, c1, r2, c2, p], i) => {
+        const x = Math.min(dx(c1), dx(c2)), y = Math.min(dy(r1), dy(r2))
+        const w = Math.abs(dx(c2) - dx(c1)), h = Math.abs(dy(r2) - dy(r1))
+        return <rect key={i} x={x} y={y} width={w} height={h}
+          fill={p === 'X' ? '#5b9bd520' : '#e0525220'}
+          stroke={p === 'X' ? '#5b9bd5' : '#e05252'} strokeWidth={2} rx={2}/>
+      })}
+      {draftRect && (() => {
+        const [r1, c1, r2, c2] = draftRect
+        const x = Math.min(dx(c1), dx(c2)), y = Math.min(dy(r1), dy(r2))
+        const w = Math.abs(dx(c2) - dx(c1)), h = Math.abs(dy(r2) - dy(r1))
+        return <rect x={x} y={y} width={w} height={h}
+          fill="none" stroke="#5b9bd5aa" strokeWidth={1.8} strokeDasharray="5 3" rx={2}/>
+      })()}
+      {[0, 1, 2].flatMap(r => [0, 1, 2].map(c => (
+        <circle key={`d${c}${r}`} cx={dx(c)} cy={dy(r)} r={3.5} fill="#bbb"/>
+      )))}
+    </svg>
+  )
+}
+
+// CatMouse snapshot — pentagon + center graph
+const _CM_DEMO_NODES = [
+  { x: 45, y: 10 }, // 0 top
+  { x: 74, y: 31 }, // 1 upper-right
+  { x: 63, y: 65 }, // 2 lower-right
+  { x: 27, y: 65 }, // 3 lower-left
+  { x: 16, y: 31 }, // 4 upper-left
+  { x: 45, y: 44 }, // 5 center
+]
+const _CM_DEMO_EDGES: [number, number][] = [[0,1],[1,2],[2,3],[3,4],[4,0],[5,0],[5,2],[5,3]]
+function CmDiagram({ virus, cell }: { virus: number; cell: number }) {
+  const caught = virus === cell
+  return (
+    <svg viewBox="0 0 90 90" style={{ width: '100%', height: '100%', display: 'block' }}>
+      <rect width={90} height={90} fill="#fafaf8"/>
+      {_CM_DEMO_EDGES.map(([a, b], i) => {
+        const na = _CM_DEMO_NODES[a], nb = _CM_DEMO_NODES[b]
+        return <line key={i} x1={na.x} y1={na.y} x2={nb.x} y2={nb.y} stroke="#ddd" strokeWidth={2}/>
+      })}
+      {_CM_DEMO_NODES.map((n, i) => (
+        <circle key={i} cx={n.x} cy={n.y} r={6} fill="#f0f0f0" stroke="#ccc" strokeWidth={1.5}/>
+      ))}
+      {!caught && (() => {
+        const vn = _CM_DEMO_NODES[virus]
+        return <>
+          <circle cx={vn.x} cy={vn.y} r={9} fill="#e05252"/>
+          <line x1={vn.x - 5} y1={vn.y - 5} x2={vn.x + 5} y2={vn.y + 5} stroke="white" strokeWidth={2} strokeLinecap="round"/>
+          <line x1={vn.x + 5} y1={vn.y - 5} x2={vn.x - 5} y2={vn.y + 5} stroke="white" strokeWidth={2} strokeLinecap="round"/>
+        </>
+      })()}
+      {!caught && (
+        <circle cx={_CM_DEMO_NODES[cell].x} cy={_CM_DEMO_NODES[cell].y}
+          r={9} fill="none" stroke="#5b9bd5" strokeWidth={2.5}/>
+      )}
+      {caught && (() => {
+        const n = _CM_DEMO_NODES[virus]
+        return <>
+          <circle cx={n.x} cy={n.y} r={11} fill="#5b9bd5" stroke="#e05252" strokeWidth={2}/>
+          <line x1={n.x - 5} y1={n.y - 5} x2={n.x + 5} y2={n.y + 5} stroke="white" strokeWidth={2} strokeLinecap="round"/>
+          <line x1={n.x + 5} y1={n.y - 5} x2={n.x - 5} y2={n.y + 5} stroke="white" strokeWidth={2} strokeLinecap="round"/>
+        </>
+      })()}
+    </svg>
+  )
+}
+
+function Ch4GameOverOverlay({ winnerLabel, winnerColor, onPlayAgain }: {
+  winnerLabel: string; winnerColor: string; onPlayAgain: () => void
+}) {
+  return (
+    <div style={{
+      position: 'absolute', inset: 0, display: 'flex', flexDirection: 'column',
+      alignItems: 'center', justifyContent: 'center', gap: 16,
+      background: 'rgba(255,255,255,0.94)', borderRadius: 16, zIndex: 10,
+    }}>
+      <div style={{
+        fontSize: 28, fontWeight: 900, color: winnerColor,
+        fontFamily: 'inherit', textAlign: 'center', padding: '0 24px', lineHeight: 1.3,
+      }}>{winnerLabel}</div>
+      <button onClick={onPlayAgain} style={{
+        padding: '9px 28px', borderRadius: 30, background: winnerColor, border: 'none',
+        color: '#fff', fontSize: 15, fontWeight: 700, cursor: 'pointer', fontFamily: 'inherit',
+      }}>↺ Play again</button>
+    </div>
+  )
+}
+
 function TicTacToePage() {
   const [mode, setMode]         = useState<TTTMode>('computer')
   const [board, setBoard]       = useState<TTTCell[]>(Array(9).fill(null))
@@ -3585,13 +3879,19 @@ function TicTacToePage() {
   const [winLine, setWinLine]   = useState<number[] | null>(null)
   const [hasWon, setHasWon]     = useState(false)
   const [hovered, setHovered]   = useState<number | null>(null)
+  const [rulesOpen, setRulesOpen] = useState(false)
   const aiPendingRef            = useRef(false)
+  const aiTimerRef              = useRef<ReturnType<typeof setTimeout> | null>(null)
   const isLandscape             = useIsLandscape()
 
   const P_COLOR: Record<'X'|'O', string> = { X: BLUE, O: RED }
   const gameOver = status !== 'playing'
 
+  // Cancel pending AI timer on unmount
+  useEffect(() => () => { if (aiTimerRef.current) clearTimeout(aiTimerRef.current) }, [])
+
   function resetGame(nextMode = mode) {
+    if (aiTimerRef.current) { clearTimeout(aiTimerRef.current); aiTimerRef.current = null }
     setBoard(Array(9).fill(null))
     setCurrent('X')
     setStatus('playing')
@@ -3620,7 +3920,8 @@ function TicTacToePage() {
 
     if (mode === 'computer' && next === 'O') {
       aiPendingRef.current = true
-      setTimeout(() => {
+      aiTimerRef.current = setTimeout(() => {
+        aiTimerRef.current = null
         const ai = tttAIMove(nb)
         const ab = [...nb] as TTTCell[]
         ab[ai] = 'O'
@@ -3637,12 +3938,8 @@ function TicTacToePage() {
     board[i] === null && status === 'playing' && !aiPendingRef.current &&
     (mode === 'two-player' || current === 'X')
 
-  const intro: React.ReactNode =
-    status === 'x-wins' ? (mode === 'computer' ? 'You win! 🎉' : 'Blue wins! 🎉')
-    : status === 'o-wins' ? (mode === 'computer' ? 'I win! Try again?' : 'Red wins! Try again?')
-    : status === 'draw'   ? "It's a draw! Try again?"
-    : mode === 'computer' ? (current === 'X' ? 'Your turn!' : 'Thinking…')
-    : (current === 'X' ? "Blue's turn!" : "Red's turn!")
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  const tttCaption = useMemo(() => ch4Caption('Tic-tac-toe', 'Take turns placing pieces — get three in a row to win!', () => setRulesOpen(true)), [])
 
   const TTT_N  = 3
   const TTT_VB = 2 * CH4_VB_PAD + TTT_N * CH4_VB_CELL   // 320
@@ -3707,15 +4004,42 @@ function TicTacToePage() {
     </svg>
   )
 
+  const tttWinnerLabel =
+    status === 'x-wins' ? (mode === 'computer' ? 'You win! 🎉' : 'Blue wins! 🎉')
+    : status === 'o-wins' ? (mode === 'computer' ? 'I win! 😄' : 'Red wins!')
+    : "It's a draw! 🤝"
+  const tttWinnerColor =
+    status === 'x-wins' ? BLUE : status === 'o-wins' ? RED : '#888'
   const playAgainOverlay = !gameOver ? null : (
-    <div style={{ position: 'absolute', top: '50%', left: '50%', transform: 'translate(-50%,-50%)', zIndex: 10 }}>
-      <div onClick={() => resetGame()}
-        onMouseDown={e => (e.currentTarget.style.transform = 'scale(0.95)')}
-        onMouseUp={e => (e.currentTarget.style.transform = 'scale(1)')}
-        style={{ padding: '9px 26px', borderRadius: 30, background: status === 'x-wins' ? BLUE : status === 'o-wins' ? RED : '#222', color: '#fff', fontSize: 15, fontWeight: 700, cursor: 'pointer', fontFamily: 'inherit', boxShadow: '0 4px 20px #0003' }}>
-        {status === 'x-wins' ? '🎉 Play again!' : 'Try again!'}
-      </div>
-    </div>
+    <Ch4GameOverOverlay
+      winnerLabel={tttWinnerLabel}
+      winnerColor={tttWinnerColor}
+      onPlayAgain={() => resetGame()}
+    />
+  )
+
+  const tttRules = (
+    <>
+      <RuleSteps steps={[
+        {
+          svg: <TttDiagram pieces={[{c:1,r:1,type:'X'},{c:2,r:0,type:'O'}]}/>,
+          label: 'Take turns',
+        },
+        {
+          svg: <TttDiagram pieces={[{c:0,r:0,type:'X'},{c:1,r:1,type:'X'},{c:2,r:0,type:'O'},{c:0,r:2,type:'O'}]}/>,
+          label: 'Build your row',
+        },
+        {
+          svg: <TttDiagram
+            pieces={[{c:0,r:0,type:'X'},{c:1,r:1,type:'X'},{c:2,r:2,type:'X'},{c:2,r:0,type:'O'},{c:0,r:2,type:'O'}]}
+            winCells={[[0,0],[1,1],[2,2]]}/>,
+          label: '3 in a row wins!',
+        },
+      ]}/>
+      <p style={{ margin: '0 0 10px' }}>Players alternate placing their piece on the 3×3 grid. Blue goes first.</p>
+      <p style={{ margin: '0 0 10px' }}>First player to get <b>three pieces in a row</b> — horizontally, vertically, or diagonally — wins.</p>
+      <p style={{ margin: 0 }}>If the board fills up with no winner, it's a <b>draw</b>.</p>
+    </>
   )
 
   if (isLandscape) {
@@ -3733,8 +4057,9 @@ function TicTacToePage() {
             {playAgainOverlay}
           </div>
         </div>
-        <IntroText>{intro}</IntroText>
-        <SetDone done={hasWon} />
+        <IntroText>{tttCaption}</IntroText>
+        <SetDone done={gameOver} />
+        {rulesOpen && <Ch4RulesModal title="How to play Tic-tac-toe" onClose={() => setRulesOpen(false)}>{tttRules}</Ch4RulesModal>}
       </>
     )
   }
@@ -3756,8 +4081,9 @@ function TicTacToePage() {
           <ModeSelector mode={mode} onReset={resetGame} />
         </div>
       </div>
-      <IntroText>{intro}</IntroText>
-      <SetDone done={hasWon} />
+      <IntroText>{tttCaption}</IntroText>
+      <SetDone done={gameOver} />
+      {rulesOpen && <Ch4RulesModal title="How to play Tic-tac-toe" onClose={() => setRulesOpen(false)}>{tttRules}</Ch4RulesModal>}
     </>
   )
 }
@@ -3860,11 +4186,16 @@ function DotsAndBoxesPage() {
   const [bBoxes, setBBoxes]   = useState<DBOwner[]>(dbMkB)
   const [current, setCurrent] = useState<'X' | 'O'>('X')
   const [hasWon, setHasWon]   = useState(false)
+  const [rulesOpen, setRulesOpen] = useState(false)
   const [selDot, setSelDot]   = useState<{ r: number; c: number } | null>(null)
   const [dragPt, setDragPt]   = useState<{ x: number; y: number } | null>(null)
   const dbSvgRef = useRef<SVGSVGElement>(null)
   const aiPendingRef = useRef(false)
+  const aiCancelRef  = useRef(false)
   const isLandscape  = useIsLandscape()
+
+  // Cancel any in-flight AI chain on unmount
+  useEffect(() => () => { aiCancelRef.current = true }, [])
 
   function toDBSVGPt(e: React.PointerEvent) {
     const svg = dbSvgRef.current; if (!svg) return null
@@ -3887,11 +4218,8 @@ function DotsAndBoxesPage() {
   const scoreO   = bBoxes.filter(b => b === 'O').length
   const gameOver = bBoxes.every(b => b !== null)
 
-  const intro: React.ReactNode =
-    !gameOver ? 'Drag from a dot to an adjacent dot to draw a line!'
-    : scoreX > scoreO ? (mode === 'computer' ? 'You win! 🎉' : 'Blue wins! 🎉')
-    : scoreX < scoreO ? (mode === 'computer' ? 'I win! Try again?' : 'Red wins! Try again?')
-    : "It's a draw!"
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  const dbCaption = useMemo(() => ch4Caption('Dots & Boxes', 'Draw lines to close boxes and outscore your opponent!', () => setRulesOpen(true)), [])
 
   useEffect(() => {
     if (gameOver && scoreX > scoreO && !hasWon) setHasWon(true)
@@ -3925,10 +4253,11 @@ function DotsAndBoxesPage() {
   }
 
   function resetGame(newMode?: TTTMode) {
+    aiCancelRef.current = true   // stop any in-flight AI chain
+    aiPendingRef.current = false
     setMode(newMode ?? mode)
     setHLines(dbMkH()); setVLines(dbMkV()); setBBoxes(dbMkB())
     setCurrent('X'); setHasWon(false); setSelDot(null); setDragPt(null)
-    aiPendingRef.current = false
   }
 
   // Commit a line as the current player, then chain AI if needed
@@ -3940,7 +4269,9 @@ function DotsAndBoxesPage() {
 
     if (mode === 'computer' && next === 'O') {
       aiPendingRef.current = true
+      aiCancelRef.current = false   // fresh chain
       function runAI(ch: DBOwner[], cv: DBOwner[], cb: DBOwner[]) {
+        if (aiCancelRef.current) { aiPendingRef.current = false; return }
         const move = dbAI(ch, cv, cb)
         if (!move) { aiPendingRef.current = false; setCurrent('X'); return }
         const r2   = dbApply(ch, cv, cb, move.isH, move.idx, 'O')
@@ -4035,23 +4366,47 @@ function DotsAndBoxesPage() {
     </svg>
   )
 
-  const gameOverOverlay = gameOver && (
-    <div style={{ position: 'absolute', top: '50%', left: '50%', transform: 'translate(-50%, -50%)', zIndex: 10, pointerEvents: 'auto' }}>
-      <div onClick={() => resetGame()} style={{
-        padding: '9px 26px', borderRadius: 30,
-        background: scoreX > scoreO ? BLUE : scoreX < scoreO ? RED : '#222',
-        color: '#fff', fontSize: 15, fontWeight: 700, cursor: 'pointer', fontFamily: 'inherit',
-        boxShadow: '0 4px 20px #0003',
-      }}
-        onMouseDown={e => (e.currentTarget.style.transform = 'scale(0.95)')}
-        onMouseUp={e => (e.currentTarget.style.transform = 'scale(1)')}
-      >
-        {scoreX > scoreO ? '🎉 Play again!' : scoreX < scoreO ? 'Try again!' : '🤝 Play again!'}
-      </div>
-    </div>
-  )
+  const dbWinnerLabel =
+    scoreX > scoreO ? (mode === 'computer' ? 'You win! 🎉' : 'Blue wins! 🎉')
+    : scoreX < scoreO ? (mode === 'computer' ? 'I win! 😄' : 'Red wins!')
+    : "It's a draw! 🤝"
+  const dbWinnerColor = scoreX > scoreO ? BLUE : scoreX < scoreO ? RED : '#888'
+  const gameOverOverlay = gameOver ? (
+    <Ch4GameOverOverlay
+      winnerLabel={dbWinnerLabel}
+      winnerColor={dbWinnerColor}
+      onPlayAgain={() => resetGame()}
+    />
+  ) : null
 
   const controlBorder = '1.5px solid #ede8df'
+
+  const dbRules = (
+    <>
+      <RuleSteps steps={[
+        {
+          svg: <DbDiagram hLines={[[0,0,'hint']]} />,
+          label: 'Click between two dots',
+        },
+        {
+          svg: <DbDiagram
+            hLines={[[0,0,'X'],[1,0,'X']]}
+            vLines={[[0,0,'X'],[1,0,'X'],[2,0,'O']]}/>,
+          label: 'Each turn draws one line',
+        },
+        {
+          svg: <DbDiagram
+            hLines={[[0,0,'X'],[1,0,'X'],[0,1,'X']]}
+            vLines={[[0,0,'X'],[1,0,'X'],[2,0,'O']]}
+            boxes={[[0,0,'X']]}/>,
+          label: 'Close 4 sides to score!',
+        },
+      ]}/>
+      <p style={{ margin: '0 0 10px' }}>Players take turns drawing one line between two adjacent dots.</p>
+      <p style={{ margin: '0 0 10px' }}>When you complete the <b>fourth side of a box</b>, you claim it and get another turn!</p>
+      <p style={{ margin: 0 }}>The player with the <b>most boxes</b> when all lines are drawn wins. Blue goes first.</p>
+    </>
+  )
 
   if (isLandscape) {
     return (
@@ -4068,8 +4423,9 @@ function DotsAndBoxesPage() {
             {gameOverOverlay}
           </div>
         </div>
-        <IntroText>{intro}</IntroText>
-        <SetDone done={hasWon} />
+        <IntroText>{dbCaption}</IntroText>
+        <SetDone done={gameOver} />
+        {rulesOpen && <Ch4RulesModal title="How to play Dots & Boxes" onClose={() => setRulesOpen(false)}>{dbRules}</Ch4RulesModal>}
       </>
     )
   }
@@ -4091,8 +4447,9 @@ function DotsAndBoxesPage() {
           <ModeSelector mode={mode} onReset={resetGame} />
         </div>
       </div>
-      <IntroText>{intro}</IntroText>
-      <SetDone done={hasWon} />
+      <IntroText>{dbCaption}</IntroText>
+      <SetDone done={gameOver} />
+      {rulesOpen && <Ch4RulesModal title="How to play Dots & Boxes" onClose={() => setRulesOpen(false)}>{dbRules}</Ch4RulesModal>}
     </>
   )
 }
@@ -4154,11 +4511,37 @@ function dtGenerateDots(): {x:number;y:number}[] {
     if (dots.every(d => Math.hypot(d.x-x,d.y-y) > minD) && !dtNearlyCollinear(x, y, dots))
       dots.push({x,y})
   }
-  // Fallback: relax spacing but keep anti-collinearity
-  while (dots.length < DT_N) {
+  // Fallback 1: relax spacing to 55% of minD but keep anti-collinearity
+  tries = 0
+  const minDRelaxed = minD * 0.55
+  while (dots.length < DT_N && tries < 8000) {
+    tries++
+    const x = DT_PAD + Math.random()*avail
+    const y = DT_PAD + Math.random()*avail
+    if (dots.every(d => Math.hypot(d.x-x,d.y-y) > minDRelaxed) && !dtNearlyCollinear(x, y, dots))
+      dots.push({x,y})
+  }
+  // Fallback 2: anti-collinearity only (no spacing constraint)
+  tries = 0
+  while (dots.length < DT_N && tries < 8000) {
+    tries++
     const x = DT_PAD + Math.random()*avail
     const y = DT_PAD + Math.random()*avail
     if (!dtNearlyCollinear(x, y, dots)) dots.push({x,y})
+  }
+  // Fallback 3: minimal spacing (40% of minD) — no collinearity check
+  // With 13 dots in 260×260, this succeeds on the first try ~75%+ of the time
+  const minMinD = minD * 0.4
+  tries = 0
+  while (dots.length < DT_N && tries < 10000) {
+    tries++
+    const x = DT_PAD + Math.random()*avail
+    const y = DT_PAD + Math.random()*avail
+    if (dots.every(d => Math.hypot(d.x-x,d.y-y) > minMinD)) dots.push({x,y})
+  }
+  // Fallback 4: truly unconstrained — absolute last resort (avoids infinite loop)
+  while (dots.length < DT_N) {
+    dots.push({ x: DT_PAD + Math.random()*avail, y: DT_PAD + Math.random()*avail })
   }
   return dots
 }
@@ -4187,6 +4570,7 @@ function DotTrianglesPage() {
   const [scoreO,  setScoreO]  = useState(0)
   const [current, setCurrent] = useState<'X'|'O'>('X')
   const [gameOver,setGameOver]= useState(false)
+  const [rulesOpen, setRulesOpen] = useState(false)
   const [selDot,  setSelDot]  = useState<number|null>(null)
   const [dragPt,  setDragPt]  = useState<{x:number;y:number}|null>(null)
   const svgRef = useRef<SVGSVGElement>(null)
@@ -4363,25 +4747,45 @@ function DotTrianglesPage() {
     </svg>
   )
 
+  const dtWinnerLabel =
+    scoreX > scoreO ? (mode === 'computer' ? 'You win! 🎉' : 'Blue wins! 🎉')
+    : scoreX < scoreO ? (mode === 'computer' ? 'I win! 😄' : 'Red wins!')
+    : "It's a draw! 🤝"
+  const dtWinnerColor = scoreX > scoreO ? BLUE : scoreX < scoreO ? RED : '#888'
   const gameOverOverlay = gameOver ? (
-    <div style={{ position:'absolute', top:'50%', left:'50%', transform:'translate(-50%,-50%)', zIndex:10, pointerEvents:'auto' }}>
-      <div onClick={()=>resetGame()} style={{
-        padding:'9px 26px', borderRadius:30,
-        background: scoreX>scoreO ? BLUE : scoreX<scoreO ? RED : '#222',
-        color:'#fff', fontSize:15, fontWeight:700, cursor:'pointer', fontFamily:'inherit', boxShadow:'0 4px 20px #0003',
-      }}>
-        {scoreX>scoreO ? (mode==='computer'?'🎉 Play again!':'Blue wins! 🎉') :
-         scoreX<scoreO ? (mode==='computer'?'Try again!':'Red wins!') : '🤝 Play again!'}
-      </div>
-    </div>
+    <Ch4GameOverOverlay
+      winnerLabel={dtWinnerLabel}
+      winnerColor={dtWinnerColor}
+      onPlayAgain={() => resetGame()}
+    />
   ) : null
 
   const modeSelector = <ModeSelector mode={mode} onReset={resetGame} />
-  const intro = gameOver
-    ? (scoreX>scoreO?(mode==='computer'?'You win! 🎉':'Blue wins!'):scoreX<scoreO?(mode==='computer'?'I win!':'Red wins!'):"It's a draw!")
-    : current==='X'
-      ? (mode==='computer'?'Your turn — drag to draw an edge':"Blue's turn")
-      : (mode==='computer'?'Thinking…':"Red's turn")
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  const dtCaption = useMemo(() => ch4Caption('Dot Triangles', 'Connect dots to form triangles — lines can\'t cross!', () => setRulesOpen(true)), [])
+  const dtRules = (
+    <>
+      <RuleSteps steps={[
+        {
+          svg: <DtDiagram />,
+          label: 'Random dots to start',
+        },
+        {
+          svg: <DtDiagram edges={[[0,1,'X'],[0,4,'X']]}/>,
+          label: 'Connect any two dots',
+        },
+        {
+          svg: <DtDiagram
+            edges={[[0,1,'X'],[0,4,'X'],[1,4,'X']]}
+            tris={[[0,1,4,'X']]}/>,
+          label: 'Close a triangle to score!',
+        },
+      ]}/>
+      <p style={{ margin: '0 0 10px' }}>Players take turns drawing a line between any two dots. Lines <b>cannot cross</b> each other.</p>
+      <p style={{ margin: '0 0 10px' }}>When your line <b>completes a triangle</b> (closes the third side), you score it and take another turn!</p>
+      <p style={{ margin: 0 }}>Play ends when no valid lines remain. The player with the most triangles wins. Blue goes first.</p>
+    </>
+  )
 
   if (isLandscape) {
     return (
@@ -4396,7 +4800,9 @@ function DotTrianglesPage() {
             {gameOverOverlay}
           </div>
         </div>
-        <IntroText>{intro}</IntroText>
+        <IntroText>{dtCaption}</IntroText>
+        <SetDone done={gameOver} />
+        {rulesOpen && <Ch4RulesModal title="How to play Dot Triangles" onClose={() => setRulesOpen(false)}>{dtRules}</Ch4RulesModal>}
       </>
     )
   }
@@ -4415,7 +4821,9 @@ function DotTrianglesPage() {
           {modeSelector}
         </div>
       </div>
-      <IntroText>{intro}</IntroText>
+      <IntroText>{dtCaption}</IntroText>
+      <SetDone done={gameOver} />
+      {rulesOpen && <Ch4RulesModal title="How to play Dot Triangles" onClose={() => setRulesOpen(false)}>{dtRules}</Ch4RulesModal>}
     </>
   )
 }
@@ -4469,6 +4877,7 @@ function RectangleGamePage() {
   const [current, setCurrent] = useState<'X' | 'O'>('X')
   const [gameOver, setGameOver] = useState(false)
   const [winner,  setWinner]  = useState<'X' | 'O' | null>(null)
+  const [rulesOpen, setRulesOpen] = useState(false)
   const [dragStart, setDragStart] = useState<{ r: number; c: number } | null>(null)
   const [dragCur,   setDragCur]   = useState<{ r: number; c: number } | null>(null)
   const svgRef = useRef<SVGSVGElement>(null)
@@ -4600,29 +5009,43 @@ function RectangleGamePage() {
     </svg>
   )
 
+  const rgWinnerLabel = winner
+    ? (mode === 'computer' ? (winner === 'X' ? 'You win! 🎉' : 'I win! 😄') : (winner === 'X' ? 'Blue wins! 🎉' : 'Red wins!'))
+    : ''
   const gameOverOverlay = gameOver && winner ? (
-    <div style={{
-      position: 'absolute', inset: 0,
-      display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center',
-      gap: 14, background: 'rgba(255,255,255,0.88)', borderRadius: 16,
-    }}>
-      <div style={{ fontSize: 22, fontWeight: 800, color: P_COLOR[winner], fontFamily: 'inherit' }}>
-        {mode === 'computer' ? (winner === 'X' ? 'You win! 🎉' : 'I win! 😄') : `${winner === 'X' ? 'Blue' : 'Red'} wins!`}
-      </div>
-      <button onClick={() => resetGame()} style={{
-        padding: '8px 28px', borderRadius: 30, background: P_COLOR[winner], border: 'none',
-        color: '#fff', fontSize: 15, fontWeight: 700, cursor: 'pointer', fontFamily: 'inherit',
-      }}>Play Again</button>
-    </div>
+    <Ch4GameOverOverlay
+      winnerLabel={rgWinnerLabel}
+      winnerColor={P_COLOR[winner]}
+      onPlayAgain={() => resetGame()}
+    />
   ) : null
 
   const modeSelector = <ModeSelector mode={mode} onReset={resetGame} />
   const turnIndicator = <TurnIndicator current={current} gameOver={gameOver} mode={mode} P_COLOR={P_COLOR} isLandscape={isLandscape} />
-  const intro = gameOver
-    ? (winner === 'X' ? (mode === 'computer' ? 'You win! 🎉' : 'Blue wins!') : (mode === 'computer' ? 'I win! 😄' : 'Red wins!'))
-    : current === 'X'
-      ? (mode === 'computer' ? 'Your turn — drag to draw a rectangle' : "Blue's turn — drag a rectangle")
-      : (mode === 'computer' ? 'Thinking…' : "Red's turn — drag a rectangle")
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  const rgCaption = useMemo(() => ch4Caption('Rectangle Game', 'Drag to draw a rectangle — the last player to place one wins!', () => setRulesOpen(true)), [])
+  const rgRules = (
+    <>
+      <RuleSteps steps={[
+        {
+          svg: <RgDiagram />,
+          label: 'Dot grid — drag between dots',
+        },
+        {
+          svg: <RgDiagram draftRect={[0,0,1,2]}/>,
+          label: 'Any two diagonal dots',
+        },
+        {
+          svg: <RgDiagram
+            rects={[[0,0,1,2,'X'],[1,0,2,1,'O']]}/>,
+          label: 'Last valid move wins!',
+        },
+      ]}/>
+      <p style={{ margin: '0 0 10px' }}>Players take turns drawing a rectangle by dragging from one dot to another (diagonal).</p>
+      <p style={{ margin: '0 0 10px' }}>A rectangle is valid only if its edges <b>don't overlap</b> any previously drawn edges.</p>
+      <p style={{ margin: 0 }}>The player who makes the <b>last valid move</b> wins. Blue goes first.</p>
+    </>
+  )
 
   if (isLandscape) {
     return (
@@ -4637,7 +5060,9 @@ function RectangleGamePage() {
             {gameOverOverlay}
           </div>
         </div>
-        <IntroText>{intro}</IntroText>
+        <IntroText>{rgCaption}</IntroText>
+        <SetDone done={gameOver} />
+        {rulesOpen && <Ch4RulesModal title="How to play Rectangle Game" onClose={() => setRulesOpen(false)}>{rgRules}</Ch4RulesModal>}
       </>
     )
   }
@@ -4656,7 +5081,9 @@ function RectangleGamePage() {
           {modeSelector}
         </div>
       </div>
-      <IntroText>{intro}</IntroText>
+      <IntroText>{rgCaption}</IntroText>
+      <SetDone done={gameOver} />
+      {rulesOpen && <Ch4RulesModal title="How to play Rectangle Game" onClose={() => setRulesOpen(false)}>{rgRules}</Ch4RulesModal>}
     </>
   )
 }
@@ -4753,6 +5180,7 @@ function CatMousePage() {
   const [mousePos,      setMousePos]      = useState(5)
   const [turn,          setTurn]          = useState<'mouse'|'cat'>('mouse')
   const [gameOver,      setGameOver]      = useState(false)
+  const [rulesOpen,     setRulesOpen]     = useState(false)
   const [dragFrom,      setDragFrom]      = useState<number|null>(null)
   const [dragPt,        setDragPt]        = useState<{x:number;y:number}|null>(null)
   const svgRef = useRef<SVGSVGElement>(null)
@@ -4914,19 +5342,15 @@ function CatMousePage() {
   )
 
   // ── Game-over overlay ──────────────────────────────────────────────────────
+  const cmWinnerLabel = mode === 'computer'
+    ? (computerIsCat ? 'I win! 😄' : 'You win! 🎉')
+    : 'Cop wins! 🎉'
   const gameOverOverlay = gameOver ? (
-    <div style={{
-      position: 'absolute', inset: 0,
-      display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center',
-      gap: 14, background: 'rgba(255,255,255,0.88)', borderRadius: 16,
-    }}>
-      <div style={{ fontSize: 52, color: CAT_COLOR, fontWeight: 900, lineHeight: 1 }}>○</div>
-      <div style={{ fontSize: 22, fontWeight: 800, color: CAT_COLOR, fontFamily: 'inherit' }}>Cell wins!</div>
-      <button onClick={() => resetGame()} style={{
-        padding: '8px 28px', borderRadius: 30, background: CAT_COLOR, border: 'none',
-        color: '#fff', fontSize: 15, fontWeight: 700, cursor: 'pointer', fontFamily: 'inherit',
-      }}>Play Again</button>
-    </div>
+    <Ch4GameOverOverlay
+      winnerLabel={cmWinnerLabel}
+      winnerColor={CAT_COLOR}
+      onPlayAgain={() => resetGame()}
+    />
   ) : null
 
   const CM_P_COLOR: Record<'X'|'O', string> = { X: MOUSE_COLOR, O: CAT_COLOR }
@@ -4934,14 +5358,32 @@ function CatMousePage() {
     X: <LucideX size={14} strokeWidth={2.5} color="#fff" />,
     O: <LucideCircle size={13} strokeWidth={2.5} color="#fff" />,
   }
-  const CM_LABELS: Record<'X'|'O', string> = mode === 'computer'
-    ? (computerIsCat ? { X: 'You', O: 'Me' } : { X: 'Me', O: 'You' })
-    : { X: 'virus', O: 'cell' }
+  const CM_LABELS: Record<'X'|'O', string> = { X: 'Robber', O: 'Cop' }
   const modeSelector = <ModeSelector mode={mode} onReset={resetGame} />
-  const intro = gameOver ? 'Cell wins!'
-    : turn === 'mouse'
-      ? (mode === 'computer' && !computerIsCat ? 'Virus is thinking…' : "Virus's turn — drag to move")
-      : (mode === 'computer' && computerIsCat  ? 'Cell is thinking…'  : "Cell's turn — drag to move")
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  const cmCaption = useMemo(() => ch4Caption('Cops vs Robbers', 'The cop chases the robber — catch it to win!', () => setRulesOpen(true)), [])
+  const cmRules = (
+    <>
+      <RuleSteps steps={[
+        {
+          svg: <CmDiagram virus={0} cell={5}/>,
+          label: 'Robber (×) and cop (○)',
+        },
+        {
+          svg: <CmDiagram virus={1} cell={5}/>,
+          label: 'Move one step per turn',
+        },
+        {
+          svg: <CmDiagram virus={2} cell={2}/>,
+          label: 'Cop catches the robber!',
+        },
+      ]}/>
+      <p style={{ margin: '0 0 10px' }}>The <b>robber</b> (×) moves first, then the <b>cop</b> (○) moves — alternating each turn.</p>
+      <p style={{ margin: '0 0 10px' }}>Each turn, drag your piece one step along a connected edge.</p>
+      <p style={{ margin: '0 0 10px' }}>The cop wins by landing on the <b>same node</b> as the robber.</p>
+      <p style={{ margin: 0 }}>In computer mode you're randomly assigned to play the robber or the cop.</p>
+    </>
+  )
 
   if (isLandscape) {
     return (
@@ -4956,7 +5398,9 @@ function CatMousePage() {
             {gameOverOverlay}
           </div>
         </div>
-        <IntroText>{intro}</IntroText>
+        <IntroText>{cmCaption}</IntroText>
+        <SetDone done={gameOver} />
+        {rulesOpen && <Ch4RulesModal title="How to play Cops vs Robbers" onClose={() => setRulesOpen(false)}>{cmRules}</Ch4RulesModal>}
       </>
     )
   }
@@ -4975,12 +5419,14 @@ function CatMousePage() {
           {modeSelector}
         </div>
       </div>
-      <IntroText>{intro}</IntroText>
+      <IntroText>{cmCaption}</IntroText>
+      <SetDone done={gameOver} />
+      {rulesOpen && <Ch4RulesModal title="How to play Cops vs Robbers" onClose={() => setRulesOpen(false)}>{cmRules}</Ch4RulesModal>}
     </>
   )
 }
 
-const CHAPTER4_PAGES: React.ComponentType[] = [TicTacToePage, DotsAndBoxesPage, DotTrianglesPage, RectangleGamePage, CatMousePage]
+const CHAPTER4_PAGES: React.ComponentType[] = [TicTacToePage, DotsAndBoxesPage, DotTrianglesPage, CatMousePage]
 
 export default function PressHere() {
   const [page,       setPage]      = useState(0)
