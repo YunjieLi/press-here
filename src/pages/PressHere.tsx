@@ -3832,7 +3832,7 @@ const _CM_DEMO_NODES = [
   { x: 45, y: 44 }, // 5 center
 ]
 const _CM_DEMO_EDGES: [number, number][] = [[0,1],[1,2],[2,3],[3,4],[4,0],[5,0],[5,2],[5,3]]
-function CmDiagram({ virus, cell }: { virus: number; cell: number }) {
+function CmDiagram({ virus, cell, simple = false }: { virus: number; cell: number; simple?: boolean }) {
   const caught = virus === cell
   return (
     <svg viewBox="0 0 90 90" style={{ width: '100%', height: '100%', display: 'block' }}>
@@ -3846,15 +3846,19 @@ function CmDiagram({ virus, cell }: { virus: number; cell: number }) {
       ))}
       {!caught && (() => {
         const vn = _CM_DEMO_NODES[virus]
-        return <>
-          <circle cx={vn.x} cy={vn.y} r={9} fill="#e05252"/>
-          <line x1={vn.x - 5} y1={vn.y - 5} x2={vn.x + 5} y2={vn.y + 5} stroke="white" strokeWidth={2} strokeLinecap="round"/>
-          <line x1={vn.x + 5} y1={vn.y - 5} x2={vn.x - 5} y2={vn.y + 5} stroke="white" strokeWidth={2} strokeLinecap="round"/>
-        </>
+        return simple
+          ? <circle cx={vn.x} cy={vn.y} r={9} fill="#e05252"/>
+          : <>
+              <circle cx={vn.x} cy={vn.y} r={9} fill="#e05252"/>
+              <line x1={vn.x - 5} y1={vn.y - 5} x2={vn.x + 5} y2={vn.y + 5} stroke="white" strokeWidth={2} strokeLinecap="round"/>
+              <line x1={vn.x + 5} y1={vn.y - 5} x2={vn.x - 5} y2={vn.y + 5} stroke="white" strokeWidth={2} strokeLinecap="round"/>
+            </>
       })()}
       {!caught && (
-        <circle cx={_CM_DEMO_NODES[cell].x} cy={_CM_DEMO_NODES[cell].y}
-          r={9} fill="none" stroke="#5b9bd5" strokeWidth={2.5}/>
+        simple
+          ? <circle cx={_CM_DEMO_NODES[cell].x} cy={_CM_DEMO_NODES[cell].y} r={9} fill="#5b9bd5"/>
+          : <circle cx={_CM_DEMO_NODES[cell].x} cy={_CM_DEMO_NODES[cell].y}
+              r={9} fill="none" stroke="#5b9bd5" strokeWidth={2.5}/>
       )}
       {caught && (() => {
         const n = _CM_DEMO_NODES[virus]
@@ -4039,14 +4043,6 @@ function TicTacToePage() {
   const tttRules = (
     <>
       <RuleSteps steps={[
-        {
-          svg: <TttDiagram pieces={[{c:1,r:1,type:'X'},{c:2,r:0,type:'O'}]}/>,
-          label: 'Take turns',
-        },
-        {
-          svg: <TttDiagram pieces={[{c:0,r:0,type:'X'},{c:1,r:1,type:'X'},{c:2,r:0,type:'O'},{c:0,r:2,type:'O'}]}/>,
-          label: 'Build your row',
-        },
         {
           svg: <TttDiagram
             pieces={[{c:0,r:0,type:'X'},{c:1,r:1,type:'X'},{c:2,r:2,type:'X'},{c:2,r:0,type:'O'},{c:0,r:2,type:'O'}]}
@@ -4402,16 +4398,6 @@ function DotsAndBoxesPage() {
   const dbRules = (
     <>
       <RuleSteps steps={[
-        {
-          svg: <DbDiagram hLines={[[0,0,'hint']]} />,
-          label: 'Click between two dots',
-        },
-        {
-          svg: <DbDiagram
-            hLines={[[0,0,'X'],[1,0,'X']]}
-            vLines={[[0,0,'X'],[1,0,'X'],[2,0,'O']]}/>,
-          label: 'Each turn draws one line',
-        },
         {
           svg: <DbDiagram
             hLines={[[0,0,'X'],[1,0,'X'],[0,1,'X']]}
@@ -4785,16 +4771,8 @@ function DotTrianglesPage() {
     <>
       <RuleSteps steps={[
         {
-          svg: <DtDiagram />,
-          label: 'Random dots to start',
-        },
-        {
-          svg: <DtDiagram edges={[[0,1,'X'],[0,4,'X']]}/>,
-          label: 'Connect any two dots',
-        },
-        {
           svg: <DtDiagram
-            edges={[[0,1,'X'],[0,4,'X'],[1,4,'X']]}
+            edges={[[0,1,'X'],[0,4,'X'],[1,4,'O']]}
             tris={[[0,1,4,'X']]}/>,
           label: 'Close a triangle to score!',
         },
@@ -5384,16 +5362,8 @@ function CatMousePage() {
     <>
       <RuleSteps steps={[
         {
-          svg: <CmDiagram virus={0} cell={5}/>,
-          label: 'Robber (×) and cop (○)',
-        },
-        {
-          svg: <CmDiagram virus={1} cell={5}/>,
+          svg: <CmDiagram virus={1} cell={5} simple/>,
           label: 'Move one step per turn',
-        },
-        {
-          svg: <CmDiagram virus={2} cell={2}/>,
-          label: 'Cop catches the robber!',
         },
       ]}/>
       <p style={{ margin: '0 0 10px' }}>The <b>robber</b> (×) moves first, then the <b>cop</b> (○) moves — alternating each turn.</p>
