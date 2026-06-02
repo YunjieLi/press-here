@@ -2754,15 +2754,16 @@ const C3P2_PP_SPEED   = 0.7      // uniform ping-pong speed for all moving cloud
 let _c3p2Fid = 0
 
 /** Generate a row of 1–2 platforms whose centre tracks prevGroupCx. */
-function makeC3P2Floor(worldY: number, cw: number, prevGroupCx?: number, hard = false): C3P2Floor {
+function makeC3P2Floor(worldY: number, cw: number, prevGroupCx?: number, hard = false, ch = 0): C3P2Floor {
   const numClouds  = Math.random() < 0.45 ? 1 : 2
-  // Each platform: 16–34% of canvas width (slightly narrower than before)
-  const minCW      = Math.floor(cw * 0.16)
-  const maxCW      = Math.floor(cw * 0.34)
+  // On narrow portrait canvases (cw < ch) make clouds wider so the game stays playable
+  const narrow     = ch > 0 && cw < ch
+  const minCW      = Math.floor(cw * (narrow ? 0.28 : 0.16))
+  const maxCW      = Math.floor(cw * (narrow ? 0.50 : 0.34))
   const widths     = Array.from({ length: numClouds }, () =>
     minCW + Math.floor(Math.random() * (maxCW - minCW))
   )
-  const gapBetween = numClouds > 1 ? (C3P2_GAP_W + Math.random() * 60) : 0
+  const gapBetween = numClouds > 1 ? ((narrow ? 30 : C3P2_GAP_W) + Math.random() * (narrow ? 20 : 60)) : 0
   const groupW     = widths.reduce((s, w) => s + w, 0) + gapBetween * (numClouds - 1)
 
   // Constrain group centre so consecutive rows stay reachable
@@ -2863,7 +2864,7 @@ function Ch3Page2({ winTarget = C3P2_WIN, variant = 'normal' }: { winTarget?: nu
     })
     let prevGroupCx = cw / 2
     for (let i = 1; i < 35; i++) {
-      const f    = makeC3P2Floor(firstWY + i * C3P2_SPACING, cw, prevGroupCx, variant === 'hard')
+      const f    = makeC3P2Floor(firstWY + i * C3P2_SPACING, cw, prevGroupCx, variant === 'hard', ch)
       prevGroupCx = floorGroupCx(f)
       floorsRef.current.push(f)
     }
@@ -3001,7 +3002,7 @@ function Ch3Page2({ winTarget = C3P2_WIN, variant = 'normal' }: { winTarget?: nu
         // ── 7. Extend floor pool ahead of camera ─────────────────────────────
         const last = floorsRef.current[floorsRef.current.length - 1]
         if (last && last.worldY < camYRef.current + ch * 2.2) {
-          floorsRef.current.push(makeC3P2Floor(last.worldY + C3P2_SPACING, cw, floorGroupCx(last), variant === 'hard'))
+          floorsRef.current.push(makeC3P2Floor(last.worldY + C3P2_SPACING, cw, floorGroupCx(last), variant === 'hard', ch))
         }
       }
 
