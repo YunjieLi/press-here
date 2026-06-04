@@ -10,6 +10,8 @@ const RED    = '#F63664'
 const BLUE   = '#5CCBF8'
 const DOT_SIZE = 80
 
+type Player = 'X' | 'O' | 'Y'
+
 // Fixed horizontal positions for color baskets — same across all collection pages
 const BASKET_LEFT: Record<string, string> = { [YELLOW]: '50%', [BLUE]: '25%', [RED]: '75%' }
 // Fixed vertical positions in portrait mode — same across all collection pages so baskets don't jump
@@ -3493,14 +3495,16 @@ function useIsLandscape(): boolean {
 
 // ─── Ch4 shared components ────────────────────────────────────────────────────
 
-function TurnIndicator({ current, gameOver, mode, P_COLOR, isLandscape, scores, icons, labels }: {
-  current: 'X' | 'O'; gameOver: boolean; mode: TTTMode
-  P_COLOR: Record<'X' | 'O', string>
+function TurnIndicator({ current, gameOver, mode, P_COLOR, isLandscape, scores, icons, labels, players = ['X', 'O'] }: {
+  current: Player; gameOver: boolean; mode: TTTMode
+  P_COLOR: Partial<Record<Player, string>>
   isLandscape: boolean
-  scores?: { X: number; O: number }
-  icons?: { X: React.ReactNode; O: React.ReactNode }
-  labels?: { X: string; O: string }
+  players?: Player[]
+  scores?: Partial<Record<Player, number>>
+  icons?: Partial<Record<Player, React.ReactNode>>
+  labels?: Partial<Record<Player, string>>
 }) {
+  const DEFAULT_NAMES: Record<Player, string> = { X: 'Blue', O: 'Red', Y: 'Yellow' }
   return (
     <div style={{
       display: 'flex',
@@ -3508,26 +3512,27 @@ function TurnIndicator({ current, gameOver, mode, P_COLOR, isLandscape, scores, 
       gap: isLandscape ? 10 : 20,
       alignItems: isLandscape ? 'flex-start' : 'center',
     }}>
-      {(['X', 'O'] as const).map(p => {
+      {players.map(p => {
         const active = current === p && !gameOver
-        const label = labels != null
-          ? labels[p]
+        const label = labels != null && labels[p] != null
+          ? labels[p]!
           : scores != null
-            ? String(scores[p])
-            : mode === 'computer' ? (p === 'X' ? 'You' : 'Me') : (p === 'X' ? 'Blue' : 'Red')
+            ? String(scores[p] ?? 0)
+            : mode === 'computer' ? (p === 'X' ? 'You' : p === 'O' ? 'Me' : DEFAULT_NAMES[p]) : DEFAULT_NAMES[p]
+        const color = P_COLOR[p] ?? '#888'
         return (
           <div key={p} style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
             <div style={{
               width: 32, height: 32, borderRadius: '50%',
-              background: P_COLOR[p], flexShrink: 0,
+              background: color, flexShrink: 0,
               display: 'flex', alignItems: 'center', justifyContent: 'center',
             }}>
-              {icons && <span style={{ lineHeight: 0, color: '#fff', userSelect: 'none' }}>{icons[p]}</span>}
+              {icons?.[p] && <span style={{ lineHeight: 0, color: '#fff', userSelect: 'none' }}>{icons[p]}</span>}
             </div>
             <span style={{
               fontSize: scores != null ? 22 : 16,
               fontWeight: 700,
-              color: P_COLOR[p],
+              color,
               fontFamily: 'inherit',
               lineHeight: 1,
             }}>{label}{active ? <span style={{ fontSize: '1.5em', marginLeft: 4 }}>👈</span> : ''}</span>
@@ -3551,7 +3556,7 @@ function ModeSelector({ mode, onReset }: { mode: TTTMode; onReset: (m: TTTMode) 
           fontFamily: 'inherit',
           transition: 'background 0.15s, color 0.15s',
         }}>
-          {m === 'computer' ? 'vs Computer' : '2 Players'}
+          {m === 'computer' ? 'vs Computer' : 'Multi Players'}
         </button>
       ))}
     </div>
@@ -3559,9 +3564,37 @@ function ModeSelector({ mode, onReset }: { mode: TTTMode; onReset: (m: TTTMode) 
 }
 
 
+function PlayerCountControl({ count, onChange, isLandscape }: { count: number; onChange: (n: 2 | 3) => void; isLandscape: boolean }) {
+  const is3 = count >= 3
+  return (
+    <div style={{ display: 'flex', alignItems: 'center', gap: 10, paddingLeft: isLandscape ? 0 : 0 }}>
+      <button
+        onClick={() => onChange(is3 ? 2 : 3)}
+        style={{
+          width: 32, height: 32, borderRadius: '50%',
+          border: '2px solid #ccc',
+          background: 'transparent', color: '#bbb',
+          fontSize: 22, fontWeight: 300,
+          cursor: 'pointer',
+          display: 'flex', alignItems: 'center', justifyContent: 'center',
+          fontFamily: 'inherit', lineHeight: 1, padding: 0, flexShrink: 0,
+          transition: 'border-color 0.15s, color 0.15s',
+        }}
+        onMouseEnter={e => { e.currentTarget.style.borderColor = '#aaa'; e.currentTarget.style.color = '#888' }}
+        onMouseLeave={e => { e.currentTarget.style.borderColor = '#ccc'; e.currentTarget.style.color = '#bbb' }}
+      >{is3 ? '−' : '+'}</button>
+    </div>
+  )
+}
+
+function nextTurn(cur: Player, numPlayers: 2 | 3): Player {
+  if (numPlayers === 2) return cur === 'X' ? 'O' : 'X'
+  return cur === 'X' ? 'O' : cur === 'O' ? 'Y' : 'X'
+}
+
 // ─── Ch4 shared SVG grid constants (same scale across all pages) ──────────────
-const CH4_DOT_R    = 6    // dot radius (viewBox units, same scale as DB)
-const CH4_DOT_SEL  = 9    // selected dot radius
+const CH4_DOT_R    = 4.5  // dot radius (viewBox units, same scale as DB)
+const CH4_DOT_SEL  = 6.75 // selected dot radius
 const CH4_LW_E     = 2    // empty grid line stroke-width
 const CH4_VB_PAD   = 40   // viewBox padding
 const CH4_VB_CELL  = 80   // cell size in viewBox units
@@ -4118,7 +4151,7 @@ const dbDp = (r: number, c: number) => ({
   y: DB_VB_PAD + r * DB_VB_CELL,
 })
 
-type DBOwner = null | 'X' | 'O'
+type DBOwner = null | Player
 
 function dbMkH(): DBOwner[] { return Array<DBOwner>((DB_N + 1) * DB_N).fill(null) }
 function dbMkV(): DBOwner[] { return Array<DBOwner>(DB_N * (DB_N + 1)).fill(null) }
@@ -4143,7 +4176,7 @@ function dbCountSides(h: DBOwner[], v: DBOwner[], row: number, col: number): num
 
 function dbApply(
   h: DBOwner[], v: DBOwner[], boxes: DBOwner[],
-  isH: boolean, idx: number, player: 'X' | 'O',
+  isH: boolean, idx: number, player: Player,
 ): { h: DBOwner[]; v: DBOwner[]; boxes: DBOwner[]; extra: boolean } {
   const nh = [...h], nv = [...v]
   if (isH) nh[idx] = player; else nv[idx] = player
@@ -4198,7 +4231,8 @@ function DotsAndBoxesPage() {
   const [hLines, setHLines]   = useState<DBOwner[]>(dbMkH)
   const [vLines, setVLines]   = useState<DBOwner[]>(dbMkV)
   const [bBoxes, setBBoxes]   = useState<DBOwner[]>(dbMkB)
-  const [current, setCurrent] = useState<'X' | 'O'>('X')
+  const [current, setCurrent] = useState<Player>('X')
+  const [numPlayers, setNumPlayers] = useState<2 | 3>(2)
   const [hasWon, setHasWon]   = useState(false)
   const [rulesOpen, setRulesOpen] = useState(false)
   const [selDot, setSelDot]   = useState<{ r: number; c: number } | null>(null)
@@ -4227,17 +4261,19 @@ function DotsAndBoxesPage() {
     return best
   }
 
-  const P_COLOR: Record<'X' | 'O', string> = { X: BLUE, O: RED }
+  const P_COLOR: Record<Player, string> = { X: BLUE, O: RED, Y: YELLOW }
+  const players = (numPlayers === 3 ? ['X', 'O', 'Y'] : ['X', 'O']) as Player[]
   const scoreX   = bBoxes.filter(b => b === 'X').length
   const scoreO   = bBoxes.filter(b => b === 'O').length
+  const scoreY   = bBoxes.filter(b => b === 'Y').length
   const gameOver = bBoxes.every(b => b !== null)
 
   // eslint-disable-next-line react-hooks/exhaustive-deps
   const dbCaption = useMemo(() => ch4Caption('Dots & Boxes', 'Draw lines to close boxes and outscore your opponent!', () => setRulesOpen(true)), [])
 
   useEffect(() => {
-    if (gameOver && scoreX > scoreO && !hasWon) setHasWon(true)
-  }, [gameOver, scoreX, scoreO, hasWon])
+    if (gameOver && scoreX > scoreO && scoreX > scoreY && !hasWon) setHasWon(true)
+  }, [gameOver, scoreX, scoreO, scoreY, hasWon])
 
   // Return line info for the segment between two adjacent dots, or null if already drawn / not adjacent
   function adjacentLine(r1: number, c1: number, r2: number, c2: number): { isH: boolean; idx: number } | null {
@@ -4266,22 +4302,26 @@ function DotsAndBoxesPage() {
     return candidates.some(l => (l.isH ? hLines[l.idx] : vLines[l.idx]) === null)
   }
 
-  function resetGame(newMode?: TTTMode) {
+  function resetGame(newMode?: TTTMode, newNumPlayers?: 2 | 3) {
     aiCancelRef.current = true   // stop any in-flight AI chain
     aiPendingRef.current = false
-    setMode(newMode ?? mode)
+    const np = newNumPlayers ?? numPlayers
+    const nm = newMode ?? (np === 3 ? 'two-player' : mode)
+    setMode(nm); setNumPlayers(np)
     setHLines(dbMkH()); setVLines(dbMkV()); setBBoxes(dbMkB())
     setCurrent('X'); setHasWon(false); setSelDot(null); setDragPt(null)
   }
 
+  function changePlayerCount(n: 2 | 3) { resetGame(n === 3 ? 'two-player' : mode, n) }
+
   // Commit a line as the current player, then chain AI if needed
   function commitLine(isH: boolean, idx: number) {
     const res  = dbApply(hLines, vLines, bBoxes, isH, idx, current)
-    const next: 'X' | 'O' = res.extra ? current : (current === 'X' ? 'O' : 'X')
+    const next = res.extra ? current : nextTurn(current, numPlayers)
     setHLines(res.h); setVLines(res.v); setBBoxes(res.boxes); setCurrent(next)
     setSelDot(null); setDragPt(null)
 
-    if (mode === 'computer' && next === 'O') {
+    if (mode === 'computer' && numPlayers === 2 && next === 'O') {
       aiPendingRef.current = true
       aiCancelRef.current = false   // fresh chain
       function runAI(ch: DBOwner[], cv: DBOwner[], cb: DBOwner[]) {
@@ -4289,7 +4329,7 @@ function DotsAndBoxesPage() {
         const move = dbAI(ch, cv, cb)
         if (!move) { aiPendingRef.current = false; setCurrent('X'); return }
         const r2   = dbApply(ch, cv, cb, move.isH, move.idx, 'O')
-        const np: 'X' | 'O' = r2.extra ? 'O' : 'X'
+        const np: Player = r2.extra ? 'O' : 'X'
         setHLines(r2.h); setVLines(r2.v); setBBoxes(r2.boxes); setCurrent(np)
         if (r2.extra) setTimeout(() => runAI(r2.h, r2.v, r2.boxes), 420)
         else aiPendingRef.current = false
@@ -4298,7 +4338,7 @@ function DotsAndBoxesPage() {
     }
   }
 
-  const isHumanTurn = !gameOver && !aiPendingRef.current && (mode === 'two-player' || current === 'X')
+  const isHumanTurn = !gameOver && !aiPendingRef.current && (mode === 'two-player' || numPlayers === 3 || current === 'X')
 
   // Drag snap: nearest dot within 40% of cell width to the drag pointer
   const snapTarget = selDot && dragPt ? nearestDBDot(dragPt, DB_VB_CELL * 0.5) : null
@@ -4380,11 +4420,19 @@ function DotsAndBoxesPage() {
     </svg>
   )
 
-  const dbWinnerLabel =
-    scoreX > scoreO ? (mode === 'computer' ? 'You win! 🎉' : 'Blue wins! 🎉')
-    : scoreX < scoreO ? (mode === 'computer' ? 'I win! 😄' : 'Red wins!')
-    : "It's a draw! 🤝"
-  const dbWinnerColor = scoreX > scoreO ? BLUE : scoreX < scoreO ? RED : '#888'
+  const PLAYER_NAMES: Record<Player, string> = { X: mode === 'computer' ? 'You' : 'Blue', O: mode === 'computer' ? 'Me' : 'Red', Y: 'Yellow' }
+  const scores3 = { X: scoreX, O: scoreO, Y: scoreY }
+  const dbWinnerLabel = (() => {
+    const maxScore = Math.max(...players.map(p => scores3[p]))
+    const winners = players.filter(p => scores3[p] === maxScore)
+    if (winners.length > 1) return "It's a draw! 🤝"
+    return `${PLAYER_NAMES[winners[0]]} wins! 🎉`
+  })()
+  const dbWinnerColor = (() => {
+    const maxScore = Math.max(...players.map(p => scores3[p]))
+    const winners = players.filter(p => scores3[p] === maxScore)
+    return winners.length > 1 ? '#888' : P_COLOR[winners[0]]
+  })()
   const gameOverOverlay = gameOver ? (
     <Ch4GameOverOverlay
       winnerLabel={dbWinnerLabel}
@@ -4412,13 +4460,18 @@ function DotsAndBoxesPage() {
     </>
   )
 
+  const dbScores = numPlayers === 3 ? { X: scoreX, O: scoreO, Y: scoreY } : { X: scoreX, O: scoreO }
+
   if (isLandscape) {
     return (
       <>
         <div style={{ ...ch4CanvasStyle, flex: 1, display: 'flex', flexDirection: 'row', overflow: 'hidden' }}>
-          {/* Left column: turn, score, mode */}
+          {/* Left column: turn + score + add/remove player */}
           <div style={{ flexShrink: 0, display: 'flex', flexDirection: 'column', alignItems: 'flex-start', justifyContent: 'space-between', padding: '24px 20px' }}>
-            <TurnIndicator current={current} gameOver={gameOver} mode={mode} P_COLOR={P_COLOR} isLandscape={true} scores={{ X: scoreX, O: scoreO }} />
+            <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
+              <TurnIndicator current={current} gameOver={gameOver} mode={mode} P_COLOR={P_COLOR} isLandscape={true} scores={dbScores} players={players} />
+              <PlayerCountControl count={numPlayers} onChange={changePlayerCount} isLandscape={true} />
+            </div>
             <ModeSelector mode={mode} onReset={resetGame} />
           </div>
           {/* Board */}
@@ -4437,9 +4490,10 @@ function DotsAndBoxesPage() {
   return (
     <>
       <div style={{ ...ch4CanvasStyle, flex: 1, display: 'flex', flexDirection: 'column', overflow: 'hidden' }}>
-        {/* Top: turn indicator + score */}
-        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', padding: '14px 16px', flexShrink: 0 }}>
-          <TurnIndicator current={current} gameOver={gameOver} mode={mode} P_COLOR={P_COLOR} isLandscape={false} scores={{ X: scoreX, O: scoreO }} />
+        {/* Top: turn indicator + score, with +/- inline */}
+        <div style={{ display: 'flex', flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 20, padding: '14px 16px', flexShrink: 0 }}>
+          <TurnIndicator current={current} gameOver={gameOver} mode={mode} P_COLOR={P_COLOR} isLandscape={false} scores={dbScores} players={players} />
+          <PlayerCountControl count={numPlayers} onChange={changePlayerCount} isLandscape={false} />
         </div>
         {/* Middle: board */}
         <div style={{ flex: 1, position: 'relative', display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 16, boxSizing: 'border-box' }}>
@@ -4566,13 +4620,15 @@ function dtEdgeCrossesDrawn(
 function DotTrianglesPage() {
   const isLandscape = useIsLandscape()
   const [mode,    setMode]    = useState<TTTMode>('computer')
+  const [numPlayers, setNumPlayers] = useState<2 | 3>(2)
   const [gameId,  setGameId]  = useState(0)
   const [usedEdges, setUsedEdges] = useState<Set<string>>(new Set())
-  const [edgeOwner, setEdgeOwner] = useState<Record<string,'X'|'O'>>({})
-  const [claimed,   setClaimed]   = useState<Array<{tri:[number,number,number];player:'X'|'O'}>>([])
+  const [edgeOwner, setEdgeOwner] = useState<Record<string, Player>>({})
+  const [claimed,   setClaimed]   = useState<Array<{tri:[number,number,number];player:Player}>>([])
   const [scoreX,  setScoreX]  = useState(0)
   const [scoreO,  setScoreO]  = useState(0)
-  const [current, setCurrent] = useState<'X'|'O'>('X')
+  const [scoreY,  setScoreY]  = useState(0)
+  const [current, setCurrent] = useState<Player>('X')
   const [gameOver,setGameOver]= useState(false)
   const [rulesOpen, setRulesOpen] = useState(false)
   const [selDot,  setSelDot]  = useState<number|null>(null)
@@ -4604,16 +4660,20 @@ function DotTrianglesPage() {
     return s
   }, [availEdges])
 
-  const P_COLOR: Record<'X'|'O', string> = { X: BLUE, O: RED }
+  const P_COLOR: Record<Player, string> = { X: BLUE, O: RED, Y: YELLOW }
+  const players = (numPlayers === 3 ? ['X', 'O', 'Y'] : ['X', 'O']) as Player[]
 
-  function resetGame(m: TTTMode = mode) {
-    setMode(m); setGameId(id => id+1)
+  function resetGame(m: TTTMode = mode, np: 2 | 3 = numPlayers) {
+    const nm = np === 3 ? 'two-player' : m
+    setMode(nm); setNumPlayers(np); setGameId(id => id+1)
     setUsedEdges(new Set()); setEdgeOwner({}); setClaimed([])
-    setScoreX(0); setScoreO(0); setCurrent('X')
+    setScoreX(0); setScoreO(0); setScoreY(0); setCurrent('X')
     setGameOver(false); setSelDot(null); setDragPt(null)
   }
 
-  function commitEdge(a: number, b: number, who: 'X'|'O' = current) {
+  function changePlayerCount(n: 2 | 3) { resetGame(n === 3 ? 'two-player' : mode, n) }
+
+  function commitEdge(a: number, b: number, who: Player = current) {
     const key = dtEdgeKey(a,b)
     if (usedEdges.has(key)) return
     const newUsed = new Set([...usedEdges, key])
@@ -4630,8 +4690,9 @@ function DotTrianglesPage() {
     const newClaimed = [...claimed, ...newTris.map(tri => ({ tri, player: who }))]
     const nx = scoreX + (who==='X' ? newTris.length : 0)
     const no = scoreO + (who==='O' ? newTris.length : 0)
+    const ny = scoreY + (who==='Y' ? newTris.length : 0)
     setUsedEdges(newUsed); setEdgeOwner(newOwner); setClaimed(newClaimed)
-    setScoreX(nx); setScoreO(no); setSelDot(null); setDragPt(null)
+    setScoreX(nx); setScoreO(no); setScoreY(ny); setSelDot(null); setDragPt(null)
     // Recompute available edges after this addition to check game over
     const newDrawnPairs = [...drawnPairs, [a,b] as [number,number]]
     // Check if any edges can still be drawn after this move
@@ -4642,13 +4703,13 @@ function DotTrianglesPage() {
       if (!dtEdgeCrossesDrawn(i,j,dots,newDrawnPairs)) { hasAny=true; break outer }
     }
     if (!hasAny) { setGameOver(true) }
-    else if (newTris.length === 0) { setCurrent(who === 'X' ? 'O' : 'X') }
+    else if (newTris.length === 0) { setCurrent(nextTurn(who, numPlayers)) }
     // else same player goes again (scored a triangle)
   }
 
   // Computer move — prefers edges that complete the most triangles
   useEffect(() => {
-    if (mode !== 'computer' || current !== 'O' || gameOver) return
+    if (mode !== 'computer' || numPlayers !== 2 || current !== 'O' || gameOver) return
     if (availEdges.length === 0) return
     const t = setTimeout(() => {
       let best = availEdges[0], bestN = -1
@@ -4686,7 +4747,7 @@ function DotTrianglesPage() {
     return best
   }
 
-  const isHumanTurn = !gameOver && (mode==='two-player' || current==='X')
+  const isHumanTurn = !gameOver && (mode==='two-player' || numPlayers === 3 || current==='X')
   const snapDot = selDot!==null && dragPt ? nearestAvailDot(dragPt, selDot, 22) : null
 
   const svgBoard = (
@@ -4751,11 +4812,19 @@ function DotTrianglesPage() {
     </svg>
   )
 
-  const dtWinnerLabel =
-    scoreX > scoreO ? (mode === 'computer' ? 'You win! 🎉' : 'Blue wins! 🎉')
-    : scoreX < scoreO ? (mode === 'computer' ? 'I win! 😄' : 'Red wins!')
-    : "It's a draw! 🤝"
-  const dtWinnerColor = scoreX > scoreO ? BLUE : scoreX < scoreO ? RED : '#888'
+  const dtScores = numPlayers === 3 ? { X: scoreX, O: scoreO, Y: scoreY } : { X: scoreX, O: scoreO }
+  const DT_PLAYER_NAMES: Record<Player, string> = { X: mode === 'computer' ? 'You' : 'Blue', O: mode === 'computer' ? 'Me' : 'Red', Y: 'Yellow' }
+  const dtWinnerLabel = (() => {
+    const maxScore = Math.max(...players.map(p => dtScores[p as keyof typeof dtScores] ?? 0))
+    const winners = players.filter(p => (dtScores[p as keyof typeof dtScores] ?? 0) === maxScore)
+    if (winners.length > 1) return "It's a draw! 🤝"
+    return `${DT_PLAYER_NAMES[winners[0]]} wins! 🎉`
+  })()
+  const dtWinnerColor = (() => {
+    const maxScore = Math.max(...players.map(p => dtScores[p as keyof typeof dtScores] ?? 0))
+    const winners = players.filter(p => (dtScores[p as keyof typeof dtScores] ?? 0) === maxScore)
+    return winners.length > 1 ? '#888' : P_COLOR[winners[0]]
+  })()
   const gameOverOverlay = gameOver ? (
     <Ch4GameOverOverlay
       winnerLabel={dtWinnerLabel}
@@ -4764,7 +4833,6 @@ function DotTrianglesPage() {
     />
   ) : null
 
-  const modeSelector = <ModeSelector mode={mode} onReset={resetGame} />
   // eslint-disable-next-line react-hooks/exhaustive-deps
   const dtCaption = useMemo(() => ch4Caption('Dot Triangles', 'Connect dots to form triangles — lines can\'t cross!', () => setRulesOpen(true)), [])
   const dtRules = (
@@ -4788,8 +4856,11 @@ function DotTrianglesPage() {
       <>
         <div style={{ ...ch4CanvasStyle, flex:1, display:'flex', flexDirection:'row', overflow:'hidden' }}>
           <div style={{ flexShrink:0, display:'flex', flexDirection:'column', alignItems:'flex-start', justifyContent:'space-between', padding:'24px 20px' }}>
-            <TurnIndicator current={current} gameOver={gameOver} mode={mode} P_COLOR={P_COLOR} isLandscape={true} scores={{X:scoreX,O:scoreO}} />
-            {modeSelector}
+            <div style={{ display:'flex', flexDirection:'column', gap:10 }}>
+              <TurnIndicator current={current} gameOver={gameOver} mode={mode} P_COLOR={P_COLOR} isLandscape={true} scores={dtScores} players={players} />
+              <PlayerCountControl count={numPlayers} onChange={changePlayerCount} isLandscape={true} />
+            </div>
+            <ModeSelector mode={mode} onReset={resetGame} />
           </div>
           <div style={{ flex:1, position:'relative', display:'flex', alignItems:'center', justifyContent:'center', padding:24, boxSizing:'border-box' }}>
             {svgBoard}
@@ -4806,15 +4877,16 @@ function DotTrianglesPage() {
   return (
     <>
       <div style={{ ...ch4CanvasStyle, flex:1, display:'flex', flexDirection:'column', overflow:'hidden' }}>
-        <div style={{ display:'flex', alignItems:'center', justifyContent:'center', padding:'14px 16px', flexShrink:0 }}>
-          <TurnIndicator current={current} gameOver={gameOver} mode={mode} P_COLOR={P_COLOR} isLandscape={false} scores={{X:scoreX,O:scoreO}} />
+        <div style={{ display:'flex', flexDirection:'row', alignItems:'center', justifyContent:'center', gap:20, padding:'14px 16px', flexShrink:0 }}>
+          <TurnIndicator current={current} gameOver={gameOver} mode={mode} P_COLOR={P_COLOR} isLandscape={false} scores={dtScores} players={players} />
+          <PlayerCountControl count={numPlayers} onChange={changePlayerCount} isLandscape={false} />
         </div>
         <div style={{ flex:1, position:'relative', display:'flex', alignItems:'center', justifyContent:'center', padding:20, boxSizing:'border-box' }}>
           {svgBoard}
           {gameOverOverlay}
         </div>
         <div style={{ display:'flex', alignItems:'center', justifyContent:'center', padding:'12px 16px', flexShrink:0 }}>
-          {modeSelector}
+          <ModeSelector mode={mode} onReset={resetGame} />
         </div>
       </div>
       <IntroText>{dtCaption}</IntroText>
@@ -5080,6 +5152,384 @@ function RectangleGamePage() {
       <IntroText>{rgCaption}</IntroText>
       <SetDone done={gameOver} />
       {rulesOpen && <Ch4RulesModal title="How to play Rectangle Game" onClose={() => setRulesOpen(false)}>{rgRules}</Ch4RulesModal>}
+    </>
+  )
+}
+
+// ─── Chapter 4 / Page 5: 鸡毛蒜皮 ────────────────────────────────────────────
+const JMSP_ROWS  = 4
+const JMSP_COLS  = 4
+const JMSP_STEPS = 3
+const JMSP_VB_PAD = 30
+const JMSP_CELL   = 70
+const JMSP_VB_W   = 2 * JMSP_VB_PAD + (JMSP_COLS - 1) * JMSP_CELL  // 270
+const JMSP_VB_H   = 2 * JMSP_VB_PAD + (JMSP_ROWS - 1) * JMSP_CELL  // 270
+const JMSP_PR     = 15  // piece radius
+
+// Cross-shaped board: the 5 cells from the reference SVG form a plus sign.
+// Valid nodes are the corners/intersections of those cells.
+const JMSP_VALID = new Set<string>([
+  '0,1','0,2',
+  '1,0','1,1','1,2','1,3',
+  '2,0','2,1','2,2','2,3',
+  '3,1','3,2',
+])
+function jmspIsValid(r: number, c: number): boolean {
+  return JMSP_VALID.has(`${r},${c}`)
+}
+
+// The 5 cells as (topLeftRow, topLeftCol) — each cell spans one JMSP_CELL square
+const JMSP_CELLS = [
+  {r:0, c:1},  // top
+  {r:1, c:0},  // left
+  {r:1, c:1},  // center
+  {r:1, c:2},  // right
+  {r:2, c:1},  // bottom
+]
+
+type JMSPPiece = { id: string; player: 'X' | 'O'; row: number; col: number }
+
+const JMSP_INIT: JMSPPiece[] = [
+  { id: 'x0', player: 'X', row: 1, col: 0 },
+  { id: 'x1', player: 'X', row: 1, col: 1 },
+  { id: 'x2', player: 'X', row: 2, col: 0 },
+  { id: 'x3', player: 'X', row: 2, col: 1 },
+  { id: 'o0', player: 'O', row: 1, col: 2 },
+  { id: 'o1', player: 'O', row: 1, col: 3 },
+  { id: 'o2', player: 'O', row: 2, col: 2 },
+  { id: 'o3', player: 'O', row: 2, col: 3 },
+]
+
+function jmspAt(pieces: JMSPPiece[], r: number, c: number): JMSPPiece | null {
+  return pieces.find(p => p.row === r && p.col === c) ?? null
+}
+
+// DFS: find all squares reachable in exactly JMSP_STEPS orthogonal steps.
+// May pass through own pieces on intermediate steps; last step may be empty or enemy (not own).
+function jmspDests(from: JMSPPiece, pieces: JMSPPiece[]): { row: number; col: number }[] {
+  const out = new Set<string>()
+  const vis = new Set([`${from.row},${from.col}`])
+  const dirs = [[-1,0],[1,0],[0,-1],[0,1]] as const
+  function dfs(r: number, c: number, left: number) {
+    if (left === 0) { out.add(`${r},${c}`); return }
+    for (const [dr, dc] of dirs) {
+      const nr = r + dr, nc = c + dc
+      if (!jmspIsValid(nr, nc)) continue
+      const key = `${nr},${nc}`
+      if (vis.has(key)) continue
+      const occ = jmspAt(pieces, nr, nc)
+      // Intermediate: enemy blocks; own allows pass-through
+      if (left > 1 && occ && occ.player !== from.player) continue
+      // Last step: can't land on own piece
+      if (left === 1 && occ && occ.player === from.player) continue
+      vis.add(key); dfs(nr, nc, left - 1); vis.delete(key)
+    }
+  }
+  dfs(from.row, from.col, JMSP_STEPS)
+  return Array.from(out).map(k => { const [r,c] = k.split(',').map(Number); return {row:r,col:c} })
+}
+
+// Find one valid path from `from` to `to` in exactly JMSP_STEPS steps.
+function jmspPath(from: JMSPPiece, to: {row:number;col:number}, pieces: JMSPPiece[]): {row:number;col:number}[] | null {
+  let found: {row:number;col:number}[] | null = null
+  const vis = new Set([`${from.row},${from.col}`])
+  const dirs = [[-1,0],[1,0],[0,-1],[0,1]] as const
+  function dfs(r: number, c: number, left: number, path: {row:number;col:number}[]) {
+    if (found) return
+    if (left === 0) { if (r === to.row && c === to.col) found = path.slice(); return }
+    for (const [dr, dc] of dirs) {
+      const nr = r + dr, nc = c + dc
+      if (!jmspIsValid(nr, nc)) continue
+      const key = `${nr},${nc}`
+      if (vis.has(key)) continue
+      const occ = jmspAt(pieces, nr, nc)
+      if (left > 1 && occ && occ.player !== from.player) continue
+      if (left === 1 && occ && occ.player === from.player) continue
+      vis.add(key); dfs(nr, nc, left - 1, [...path, {row:nr,col:nc}]); vis.delete(key)
+    }
+  }
+  dfs(from.row, from.col, JMSP_STEPS, [{row:from.row,col:from.col}])
+  return found
+}
+
+function jmspAI(pieces: JMSPPiece[]): { id: string; to: {row:number;col:number} } | null {
+  const mine = pieces.filter(p => p.player === 'O')
+  const all: { id:string; to:{row:number;col:number}; isCapture:boolean }[] = []
+  for (const p of mine) {
+    for (const d of jmspDests(p, pieces))
+      all.push({ id: p.id, to: d, isCapture: !!jmspAt(pieces, d.row, d.col) })
+  }
+  if (!all.length) return null
+  const caps = all.filter(m => m.isCapture)
+  const pool = caps.length ? caps : all
+  return pool[Math.floor(Math.random() * pool.length)]
+}
+
+function JmspPage() {
+  const isLandscape = useIsLandscape()
+  const [mode, setMode]         = useState<TTTMode>('computer')
+  const [pieces, setPieces]     = useState<JMSPPiece[]>(() => JMSP_INIT.map(p => ({...p})))
+  const [current, setCurrent]   = useState<'X'|'O'>('X')
+  const [selId, setSelId]       = useState<string|null>(null)
+  // dragPath: cells visited so far including the starting cell [start, ...steps]
+  const [dragPath, setDragPath] = useState<{row:number;col:number}[]>([])
+  // animState: piece sliding along committed path
+  const [animState, setAnimState] = useState<{pieceId:string; path:{row:number;col:number}[]; step:number}|null>(null)
+  const [gameOver, setGameOver] = useState(false)
+  const [winner, setWinner]     = useState<'X'|'O'|null>(null)
+  const [rulesOpen, setRulesOpen] = useState(false)
+  const svgRef    = useRef<SVGSVGElement>(null)
+  const aiCancel  = useRef(false)
+  useEffect(() => () => { aiCancel.current = true }, [])
+
+  const P_COLOR: Record<Player, string> = { X: BLUE, O: RED, Y: YELLOW }
+
+  function dotXY(r: number, c: number) {
+    return { x: JMSP_VB_PAD + c * JMSP_CELL, y: JMSP_VB_PAD + r * JMSP_CELL }
+  }
+  function toSVGPt(e: React.PointerEvent): {x:number;y:number}|null {
+    const svg = svgRef.current; if (!svg) return null
+    const p = svg.createSVGPoint(); p.x = e.clientX; p.y = e.clientY
+    return p.matrixTransform(svg.getScreenCTM()!.inverse())
+  }
+
+  /** Nearest valid board node within snap radius. */
+  function nearestCell(pt: {x:number;y:number}): {row:number;col:number}|null {
+    let best: {row:number;col:number}|null = null
+    let bestD = JMSP_CELL * 0.50
+    for (const key of JMSP_VALID) {
+      const [r, c] = key.split(',').map(Number)
+      const {x,y} = dotXY(r,c)
+      const d = Math.hypot(x - pt.x, y - pt.y)
+      if (d < bestD) { bestD = d; best = {row:r, col:c} }
+    }
+    return best
+  }
+
+  /**
+   * Update dragPath given the current pointer position.
+   * - If pointer enters a cell already in the path → backtrack to that cell.
+   * - If pointer enters an adjacent unvisited cell → extend by one step (if valid).
+   * - Once path reaches JMSP_STEPS+1 cells, stop extending.
+   */
+  function updatePath(prev: {row:number;col:number}[], pt: {x:number;y:number}, piece: JMSPPiece): {row:number;col:number}[] {
+    const cell = nearestCell(pt)
+    if (!cell) return prev
+    const {row:br, col:bc} = cell
+
+    // Backtrack: pointer re-entered an earlier cell
+    const existingIdx = prev.findIndex(p => p.row === br && p.col === bc)
+    if (existingIdx >= 0) return prev.slice(0, existingIdx + 1)
+
+    // Already at max steps
+    if (prev.length >= JMSP_STEPS + 1) return prev
+
+    // Must be adjacent to last cell
+    const last = prev[prev.length - 1]
+    if (Math.abs(br - last.row) + Math.abs(bc - last.col) !== 1) return prev
+
+    // Occupancy: intermediate steps allow own pieces (pass-through), enemy blocks.
+    // Last step: can capture enemy, can't land on own.
+    const isLastStep = prev.length === JMSP_STEPS
+    const occ = jmspAt(pieces, br, bc)
+    if (!isLastStep && occ && occ.player !== piece.player) return prev  // enemy blocks intermediate
+    if (isLastStep && occ && occ.player === piece.player) return prev   // can't land on own
+
+    return [...prev, {row:br, col:bc}]
+  }
+
+  /** Commit a move: update pieces, switch turn, check win. Does NOT clear selection. */
+  function commitMove(pieceId: string, to: {row:number;col:number}) {
+    const newPieces = pieces
+      .filter(p => !(p.row === to.row && p.col === to.col))
+      .map(p => p.id === pieceId ? {...p, row: to.row, col: to.col} : p)
+    const next: 'X'|'O' = current === 'X' ? 'O' : 'X'
+    const opCount = newPieces.filter(p => p.player === next).length
+    setPieces(newPieces)
+    if (opCount === 0) { setGameOver(true); setWinner(current) }
+    else setCurrent(next)
+  }
+
+  function doMove(pieceId: string, to: {row:number;col:number}) {
+    commitMove(pieceId, to)
+    setSelId(null); setDragPath([])
+  }
+
+  /** Start the slide animation for a completed drag path. */
+  function startAnim(pieceId: string, path: {row:number;col:number}[]) {
+    setSelId(null); setDragPath([])
+    setAnimState({ pieceId, path, step: 0 })
+  }
+
+  function cancelSel() { setSelId(null); setDragPath([]) }
+
+  function resetGame(m: TTTMode = mode) {
+    aiCancel.current = true
+    setMode(m); setPieces(JMSP_INIT.map(p => ({...p})))
+    setCurrent('X'); setSelId(null); setDragPath([])
+    setAnimState(null); setGameOver(false); setWinner(null)
+  }
+
+  // Advance animation one step at a time, commit on final step
+  useEffect(() => {
+    if (!animState) return
+    if (animState.step >= animState.path.length - 1) {
+      const dest = animState.path[animState.path.length - 1]
+      commitMove(animState.pieceId, dest)
+      setAnimState(null)
+      return
+    }
+    const t = setTimeout(() => {
+      setAnimState(prev => prev ? {...prev, step: prev.step + 1} : null)
+    }, 200)
+    return () => clearTimeout(t)
+  }, [animState]) // eslint-disable-line react-hooks/exhaustive-deps
+
+  // Computer (O) move — uses jmspPath to animate along the path
+  useEffect(() => {
+    if (mode !== 'computer' || current !== 'O' || gameOver || animState) return
+    aiCancel.current = false
+    const t = setTimeout(() => {
+      if (aiCancel.current) return
+      const mv = jmspAI(pieces)
+      if (!mv) return
+      const piece = pieces.find(p => p.id === mv.id)!
+      const path = jmspPath(piece, mv.to, pieces)
+      if (path) startAnim(mv.id, path)
+      else doMove(mv.id, mv.to)
+    }, 600)
+    return () => clearTimeout(t)
+  }, [mode, current, gameOver, animState, pieces]) // eslint-disable-line react-hooks/exhaustive-deps
+
+  const isHumanTurn = !gameOver && !animState && (mode === 'two-player' || current === 'X')
+  const selPiece    = selId ? (pieces.find(p => p.id === selId) ?? null) : null
+  // Path is "complete" when exactly JMSP_STEPS steps have been drawn
+  const pathComplete = dragPath.length === JMSP_STEPS + 1
+
+  const svgBoard = (
+    <svg ref={svgRef} viewBox={`0 0 ${JMSP_VB_W} ${JMSP_VB_H}`}
+      style={{ width:'100%', height:'100%', display:'block', touchAction:'none', overflow:'visible' }}
+      onPointerMove={e => {
+        if (!selId || !selPiece) return
+        const pt = toSVGPt(e); if (!pt) return
+        setDragPath(prev => updatePath(prev, pt, selPiece))
+      }}
+      onPointerUp={() => {
+        if (!selId) return
+        if (pathComplete && dragPath.length > 0) {
+          startAnim(selId, dragPath)
+        } else {
+          cancelSel()
+        }
+      }}
+      onPointerLeave={cancelSel}
+    >
+      {/* Cross-shaped grid: five square cells matching the reference SVG */}
+      {JMSP_CELLS.map(({r, c}) => {
+        const {x, y} = dotXY(r, c)
+        return <rect key={`cell${r}${c}`} x={x} y={y} width={JMSP_CELL} height={JMSP_CELL}
+          fill="none" stroke="#ddd" strokeWidth={1.5} />
+      })}
+
+      {/* Drawn path so far */}
+      {dragPath.length > 1 && dragPath.slice(0,-1).map(({row:r,col:c},i) => {
+        const nxt = dragPath[i+1]
+        const {x:x1,y:y1}=dotXY(r,c), {x:x2,y:y2}=dotXY(nxt.row,nxt.col)
+        return <line key={`dp${i}`} x1={x1} y1={y1} x2={x2} y2={y2}
+          stroke={pathComplete ? P_COLOR[current] : P_COLOR[current]+'aa'}
+          strokeWidth={pathComplete ? 5 : 3.5} strokeLinecap="round" />
+      })}
+
+      {/* Empty node dots (valid cross nodes only) */}
+      {Array.from(JMSP_VALID).map(key => {
+        const [r, c] = key.split(',').map(Number)
+        if (jmspAt(pieces,r,c)) return null
+        const {x,y} = dotXY(r,c)
+        return <circle key={`dot${r}${c}`} cx={x} cy={y} r={4} fill="#ccc" style={{pointerEvents:'none'}} />
+      })}
+
+      {/* Pieces */}
+      {pieces.map(p => {
+        const isAnimThis = animState?.pieceId === p.id
+        const dispPos = isAnimThis
+          ? dotXY(animState!.path[animState!.step].row, animState!.path[animState!.step].col)
+          : dotXY(p.row, p.col)
+        const {x, y} = dispPos
+        const isSel  = p.id===selId
+        const canSel = isHumanTurn && p.player===current && !selId
+        return (
+          <circle key={p.id} cx={x} cy={y} r={isSel ? JMSP_PR+3 : JMSP_PR}
+            fill={P_COLOR[p.player]}
+            style={{
+              cursor: canSel ? 'grab' : 'default',
+              transition: isAnimThis ? 'cx 0.18s ease, cy 0.18s ease' : 'r 0.1s',
+              filter: isSel ? `drop-shadow(0 0 7px ${P_COLOR[p.player]}99)` : 'none',
+            }}
+            onPointerDown={e => {
+              if (!canSel) return
+              e.currentTarget.setPointerCapture(e.pointerId)
+              setSelId(p.id)
+              setDragPath([{row:p.row, col:p.col}])
+            }}
+          />
+        )
+      })}
+
+    </svg>
+  )
+
+  const winnerLabel = winner
+    ? (mode==='computer' ? (winner==='X'?'You win! 🎉':'I win! 😄') : (winner==='X'?'Blue wins! 🎉':'Red wins!'))
+    : ''
+  const gameOverOverlay = (gameOver && winner) ? (
+    <Ch4GameOverOverlay winnerLabel={winnerLabel} winnerColor={P_COLOR[winner]} onPlayAgain={resetGame} />
+  ) : null
+
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  const jmspCaption = useMemo(() => ch4Caption('鸡毛蒜皮', 'Move 3 steps — capture all the enemy pieces to win!', () => setRulesOpen(true)), [])
+  const jmspRules = (
+    <>
+      <p style={{margin:'0 0 10px'}}>Each player starts with <b>4 pieces</b>. Blue goes first.</p>
+      <p style={{margin:'0 0 10px'}}>On your turn, select a piece and drag to draw a path of exactly <b>3 steps</b> along the grid. You may pass through your own pieces. You may not revisit a square in the same move.</p>
+      <p style={{margin:'0 0 10px'}}>You may only land on an occupied square on the <b>last step</b> — this <b>captures</b> that enemy piece!</p>
+      <p style={{margin:0}}>Eat all of your opponent's pieces to <b>win</b>.</p>
+    </>
+  )
+
+  if (isLandscape) {
+    return (
+      <>
+        <div style={{...ch4CanvasStyle, flex:1, display:'flex', flexDirection:'row', overflow:'hidden'}}>
+          <div style={{flexShrink:0, display:'flex', flexDirection:'column', alignItems:'flex-start', justifyContent:'space-between', padding:'24px 20px'}}>
+            <TurnIndicator current={current} gameOver={gameOver} mode={mode} P_COLOR={P_COLOR} isLandscape={true} />
+            <ModeSelector mode={mode} onReset={resetGame} />
+          </div>
+          <div style={{flex:1, position:'relative', display:'flex', alignItems:'center', justifyContent:'center', padding:24, boxSizing:'border-box'}}>
+            {svgBoard}{gameOverOverlay}
+          </div>
+        </div>
+        <IntroText>{jmspCaption}</IntroText>
+        <SetDone done={gameOver} />
+        {rulesOpen && <Ch4RulesModal title="How to play 鸡毛蒜皮" onClose={() => setRulesOpen(false)}>{jmspRules}</Ch4RulesModal>}
+      </>
+    )
+  }
+  return (
+    <>
+      <div style={{...ch4CanvasStyle, flex:1, display:'flex', flexDirection:'column', overflow:'hidden'}}>
+        <div style={{display:'flex', alignItems:'center', justifyContent:'center', padding:'14px 16px', flexShrink:0}}>
+          <TurnIndicator current={current} gameOver={gameOver} mode={mode} P_COLOR={P_COLOR} isLandscape={false} />
+        </div>
+        <div style={{flex:1, position:'relative', display:'flex', alignItems:'center', justifyContent:'center', padding:20, boxSizing:'border-box'}}>
+          {svgBoard}{gameOverOverlay}
+        </div>
+        <div style={{display:'flex', alignItems:'center', justifyContent:'center', padding:'12px 16px', flexShrink:0}}>
+          <ModeSelector mode={mode} onReset={resetGame} />
+        </div>
+      </div>
+      <IntroText>{jmspCaption}</IntroText>
+      <SetDone done={gameOver} />
+      {rulesOpen && <Ch4RulesModal title="How to play 鸡毛蒜皮" onClose={() => setRulesOpen(false)}>{jmspRules}</Ch4RulesModal>}
     </>
   )
 }
@@ -5414,7 +5864,7 @@ function CatMousePage() {
   )
 }
 
-const CHAPTER4_PAGES: React.ComponentType[] = [TicTacToePage, DotsAndBoxesPage, DotTrianglesPage, CatMousePage]
+const CHAPTER4_PAGES: React.ComponentType[] = [TicTacToePage, DotsAndBoxesPage, DotTrianglesPage, CatMousePage, JmspPage]
 
 export default function PressHere() {
   const [page,       setPage]      = useState(0)
@@ -5595,7 +6045,7 @@ export default function PressHere() {
               </div>
               {/* Chapter pills + Replay */}
               <div style={{ display: 'flex', gap: isMobile ? 4 : 6, alignItems: 'center' }}>
-                {([1, 2] as const).map(ch => (
+                {([1, 2, 3, 4] as const).map(ch => (
                   <button
                     key={ch}
                     onClick={() => ch === 1 ? reset() : ch === 2 ? startChapter2() : ch === 3 ? startChapter3() : startChapter4()}
