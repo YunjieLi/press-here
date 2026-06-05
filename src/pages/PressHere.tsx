@@ -1,6 +1,6 @@
 import { useState, useRef, useEffect, useLayoutEffect, createContext, useContext, useMemo } from 'react'
 import '@fontsource-variable/nunito'
-import { ChevronRight, RotateCcw, X as LucideX, Circle as LucideCircle } from 'lucide-react'
+import { ChevronRight, ChevronLeft, RotateCcw, X as LucideX, Circle as LucideCircle } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { Pagination, PaginationContent, PaginationItem, PaginationLink, PaginationNext, PaginationPrevious } from '@/components/ui/pagination'
 import { cn } from '@/lib/utils'
@@ -114,7 +114,7 @@ function IntroText({ children }: { children: React.ReactNode }) {
   return null
 }
 
-function SetDone({ done }: { done: boolean }) {
+function SetDone({ done, celebrate = true }: { done: boolean; celebrate?: boolean }) {
   const active     = useContext(PageActiveCtx)
   const setDone    = useContext(DoneCtx)
   const prevRef    = useRef(false)
@@ -123,7 +123,7 @@ function SetDone({ done }: { done: boolean }) {
     if (active && done && !prevRef.current) playPageComplete()
     prevRef.current = done
   }, [active, done])
-  return (active && done) ? <ClapCelebration /> : null
+  return (active && done && celebrate) ? <ClapCelebration /> : null
 }
 
 // ─── Dot component (no entrance animation) ───────────────────────────────────
@@ -3468,6 +3468,44 @@ function Ch3Page3({ winTarget = C3P3_WIN_DIST, variant = 'normal' }: { winTarget
   )
 }
 
+// ─── Ch4 sound effects (Web Audio API — no external files) ───────────────────
+
+let _sfxCtx: AudioContext | null = null
+function getSfxCtx(): AudioContext | null {
+  try {
+    if (!_sfxCtx || _sfxCtx.state === 'closed') {
+      _sfxCtx = new (window.AudioContext || (window as any).webkitAudioContext)()
+    }
+    return _sfxCtx
+  } catch { return null }
+}
+/** Call from any pointer/click handler to unlock AudioContext on iOS */
+function sfxUnlock() {
+  const ctx = getSfxCtx()
+  if (ctx && ctx.state === 'suspended') ctx.resume().catch(() => {})
+}
+function playSound(type: 'turn' | 'score' | 'win' | 'lose' | 'tie') {
+  const ctx = getSfxCtx(); if (!ctx) return
+  if (ctx.state === 'suspended') { ctx.resume().then(() => playSound(type)).catch(() => {}); return }
+  try {
+    const now = ctx.currentTime
+    const tone = (freq: number, t: number, dur: number, vol = 0.25, shape: OscillatorType = 'sine') => {
+      const osc = ctx.createOscillator()
+      const g   = ctx.createGain()
+      osc.type = shape; osc.frequency.value = freq
+      g.gain.setValueAtTime(vol, now + t)
+      g.gain.exponentialRampToValueAtTime(0.0001, now + t + dur)
+      osc.connect(g); g.connect(ctx.destination)
+      osc.start(now + t); osc.stop(now + t + dur + 0.05)
+    }
+    if (type === 'turn')  { tone(660, 0, 0.07, 0.15) }
+    if (type === 'score') { tone(523, 0, 0.10, 0.3); tone(784, 0.09, 0.16, 0.3) }
+    if (type === 'win')   { tone(523, 0, 0.15, 0.35); tone(659, 0.14, 0.15, 0.35); tone(784, 0.28, 0.15, 0.35); tone(1047, 0.42, 0.55, 0.35) }
+    if (type === 'lose')  { tone(392, 0, 0.20, 0.25); tone(330, 0.18, 0.20, 0.25); tone(262, 0.36, 0.45, 0.22) }
+    if (type === 'tie')   { tone(440, 0, 0.12, 0.2); tone(440, 0.15, 0.12, 0.18); tone(330, 0.31, 0.28, 0.14) }
+  } catch {}
+}
+
 // ─── Ch4 shared layout utilities ─────────────────────────────────────────────
 
 const ch4CanvasStyle: React.CSSProperties = { ...canvasStyle, minWidth: 0 }
@@ -3595,6 +3633,8 @@ function nextTurn(cur: Player, numPlayers: 2 | 3): Player {
 // ─── Ch4 shared SVG grid constants (same scale across all pages) ──────────────
 const CH4_DOT_R    = 4.5  // dot radius (viewBox units, same scale as DB)
 const CH4_DOT_SEL  = 6.75 // selected dot radius
+const DB_HIT_R     = 28   // invisible touch-target radius for DotsAndBoxes dots (~35% of cell)
+const DT_HIT_R     = 18   // invisible touch-target radius for DotTriangles dots
 const CH4_LW_E     = 2    // empty grid line stroke-width
 const CH4_VB_PAD   = 40   // viewBox padding
 const CH4_VB_CELL  = 80   // cell size in viewBox units
@@ -3905,24 +3945,35 @@ function CmDiagram({ virus, cell, simple = false }: { virus: number; cell: numbe
   )
 }
 
-function Ch4GameOverOverlay({ winnerLabel, winnerColor, onPlayAgain }: {
-  winnerLabel: string; winnerColor: string; onPlayAgain: () => void
+/** Inline banner — sits in the bottom strip, never covers the board */
+function Ch4GameOverBanner({ winnerLabel, winnerColor }: {
+  winnerLabel: string; winnerColor: string
 }) {
   return (
-    <div style={{
-      position: 'absolute', inset: 0, display: 'flex', flexDirection: 'column',
-      alignItems: 'center', justifyContent: 'center', gap: 16,
-      background: 'rgba(255,255,255,0.94)', borderRadius: 16, zIndex: 10,
-    }}>
-      <div style={{
-        fontSize: 28, fontWeight: 900, color: winnerColor,
-        fontFamily: 'inherit', textAlign: 'center', padding: '0 24px', lineHeight: 1.3,
-      }}>{winnerLabel}</div>
-      <button onClick={onPlayAgain} style={{
-        padding: '9px 28px', borderRadius: 30, background: winnerColor, border: 'none',
-        color: '#fff', fontSize: 15, fontWeight: 700, cursor: 'pointer', fontFamily: 'inherit',
-      }}>↺ Play again</button>
-    </div>
+    <span style={{
+      fontSize: 20, fontWeight: 800, color: winnerColor,
+      fontFamily: 'inherit', letterSpacing: '-0.3px',
+    }}>{winnerLabel}</span>
+  )
+}
+
+/** Icon-only "Play again" button — positioned absolute in canvas top-right corner */
+function Ch4PlayAgainBtn({ show, onClick }: { show: boolean; onClick: () => void }) {
+  if (!show) return null
+  return (
+    <button
+      onClick={onClick}
+      title="Play again"
+      style={{
+        position: 'absolute', top: 8, right: 8, zIndex: 10,
+        width: 30, height: 30, borderRadius: 20, padding: 0,
+        background: 'transparent', border: '1.5px solid #ddd',
+        color: '#bbb', cursor: 'pointer',
+        display: 'flex', alignItems: 'center', justifyContent: 'center',
+      }}
+    >
+      <RotateCcw size={13} strokeWidth={2.5} />
+    </button>
   )
 }
 
@@ -3958,6 +4009,7 @@ function TicTacToePage() {
   function handleCellClick(i: number) {
     if (board[i] !== null || status !== 'playing' || aiPendingRef.current) return
     if (mode === 'computer' && current === 'O') return
+    sfxUnlock()
 
     const nb = [...board] as TTTCell[]
     nb[i] = current
@@ -3966,12 +4018,15 @@ function TicTacToePage() {
 
     if (st !== 'playing') {
       setStatus(st); setWinLine(tttWinLine(nb))
-      if (st === 'x-wins') setHasWon(true)
+      if (st === 'x-wins') { setHasWon(true); playSound(mode === 'computer' ? 'win' : 'win') }
+      else if (st === 'o-wins') playSound(mode === 'computer' ? 'lose' : 'win')
+      else playSound('tie')
       return
     }
 
     const next: 'X'|'O' = current === 'X' ? 'O' : 'X'
     setCurrent(next)
+    playSound('turn')
 
     if (mode === 'computer' && next === 'O') {
       aiPendingRef.current = true
@@ -3982,7 +4037,13 @@ function TicTacToePage() {
         ab[ai] = 'O'
         const ast = tttWinner(ab)
         setBoard(ab); setStatus(ast)
-        if (ast !== 'playing') setWinLine(tttWinLine(ab))
+        if (ast !== 'playing') {
+          setWinLine(tttWinLine(ab))
+          if (ast === 'o-wins') playSound('lose')
+          else playSound('tie')
+        } else {
+          playSound('turn')
+        }
         setCurrent('X')
         aiPendingRef.current = false
       }, 480)
@@ -4003,7 +4064,7 @@ function TicTacToePage() {
 
   const boardGrid = (
     <svg viewBox={`0 0 ${TTT_VB} ${TTT_VB}`} preserveAspectRatio="xMidYMid meet"
-      style={{ width: '100%', height: '100%', display: 'block', overflow: 'visible' }}>
+      style={{ width: '100%', aspectRatio: '1 / 1', maxHeight: '100%', display: 'block', overflow: 'visible' }}>
 
       {/* Grid lines */}
       {Array.from({ length: TTT_N + 1 }, (_, r) => {
@@ -4065,11 +4126,10 @@ function TicTacToePage() {
     : "It's a draw! 🤝"
   const tttWinnerColor =
     status === 'x-wins' ? BLUE : status === 'o-wins' ? RED : '#888'
-  const playAgainOverlay = !gameOver ? null : (
-    <Ch4GameOverOverlay
+  const gameOverBanner = !gameOver ? null : (
+    <Ch4GameOverBanner
       winnerLabel={tttWinnerLabel}
       winnerColor={tttWinnerColor}
-      onPlayAgain={() => resetGame()}
     />
   )
 
@@ -4093,19 +4153,19 @@ function TicTacToePage() {
     return (
       <>
         <div style={{ ...ch4CanvasStyle, flex: 1, display: 'flex', flexDirection: 'row', overflow: 'hidden' }}>
-          {/* Left column: turn + mode */}
+          <Ch4PlayAgainBtn show={gameOver} onClick={resetGame} />
+          {/* Left column: turn + mode / banner */}
           <div style={{ flexShrink: 0, display: 'flex', flexDirection: 'column', alignItems: 'flex-start', justifyContent: 'space-between', padding: '24px 20px' }}>
-            <TurnIndicator current={current} gameOver={gameOver} mode={mode} P_COLOR={P_COLOR} isLandscape={true} />
+            {gameOver ? gameOverBanner : <TurnIndicator current={current} gameOver={gameOver} mode={mode} P_COLOR={P_COLOR} isLandscape={true} />}
             <ModeSelector mode={mode} onReset={resetGame} />
           </div>
-          {/* Board */}
-          <div style={{ flex: 1, position: 'relative', display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 24, boxSizing: 'border-box' }}>
+          {/* Board — no overlay */}
+          <div style={{ flex: 1, minHeight: 0, display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 24, boxSizing: 'border-box' }}>
             {boardGrid}
-            {playAgainOverlay}
           </div>
         </div>
         <IntroText>{tttCaption}</IntroText>
-        <SetDone done={gameOver} />
+        <SetDone celebrate={false} done={gameOver} />
         {rulesOpen && <Ch4RulesModal title="How to play Tic-tac-toe" onClose={() => setRulesOpen(false)}>{tttRules}</Ch4RulesModal>}
       </>
     )
@@ -4113,23 +4173,23 @@ function TicTacToePage() {
 
   return (
     <>
-      <div style={{ ...ch4CanvasStyle, flex: 1, display: 'flex', flexDirection: 'column', overflow: 'hidden' }}>
-        {/* Top: turn indicator */}
-        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', padding: '14px 16px', flexShrink: 0 }}>
-          <TurnIndicator current={current} gameOver={gameOver} mode={mode} P_COLOR={P_COLOR} isLandscape={false} />
+      <div style={{ ...ch4CanvasStyle, flex: 1, display: 'flex', flexDirection: 'column', overflow: 'hidden', justifyContent: 'center' }}>
+          <Ch4PlayAgainBtn show={gameOver} onClick={resetGame} />
+        {/* Top: banner when over, turn indicator otherwise */}
+        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', padding: '0 16px', height: 60, flexShrink: 0 }}>
+          {gameOver ? gameOverBanner : <TurnIndicator current={current} gameOver={gameOver} mode={mode} P_COLOR={P_COLOR} isLandscape={false} />}
         </div>
-        {/* Middle: game area */}
-        <div style={{ flex: 1, position: 'relative', display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 20, boxSizing: 'border-box' }}>
+        {/* Middle: board — no overlay */}
+        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 20, boxSizing: 'border-box' }}>
           {boardGrid}
-          {playAgainOverlay}
         </div>
-        {/* Bottom: mode switch */}
-        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', padding: '12px 16px', flexShrink: 0 }}>
+        {/* Bottom: always mode selector */}
+        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', padding: '0 16px', height: 48, flexShrink: 0 }}>
           <ModeSelector mode={mode} onReset={resetGame} />
         </div>
       </div>
       <IntroText>{tttCaption}</IntroText>
-      <SetDone done={gameOver} />
+      <SetDone celebrate={false} done={gameOver} />
       {rulesOpen && <Ch4RulesModal title="How to play Tic-tac-toe" onClose={() => setRulesOpen(false)}>{tttRules}</Ch4RulesModal>}
     </>
   )
@@ -4240,6 +4300,8 @@ function DotsAndBoxesPage() {
   const dbSvgRef = useRef<SVGSVGElement>(null)
   const aiPendingRef = useRef(false)
   const aiCancelRef  = useRef(false)
+  // Ref mirrors drag state for pointer handlers — avoids stale-closure race on touch
+  const selDotRef    = useRef<{r:number;c:number}|null>(null)
   const isLandscape  = useIsLandscape()
 
   // Cancel any in-flight AI chain on unmount
@@ -4309,17 +4371,38 @@ function DotsAndBoxesPage() {
     const nm = newMode ?? (np === 3 ? 'two-player' : mode)
     setMode(nm); setNumPlayers(np)
     setHLines(dbMkH()); setVLines(dbMkV()); setBBoxes(dbMkB())
-    setCurrent('X'); setHasWon(false); setSelDot(null); setDragPt(null)
+    setCurrent('X'); setHasWon(false)
+    selDotRef.current = null
+    setSelDot(null); setDragPt(null)
   }
 
   function changePlayerCount(n: 2 | 3) { resetGame(n === 3 ? 'two-player' : mode, n) }
 
   // Commit a line as the current player, then chain AI if needed
   function commitLine(isH: boolean, idx: number) {
+    sfxUnlock()
     const res  = dbApply(hLines, vLines, bBoxes, isH, idx, current)
     const next = res.extra ? current : nextTurn(current, numPlayers)
+    const isGameOver = res.boxes.every(b => b !== null)
     setHLines(res.h); setVLines(res.v); setBBoxes(res.boxes); setCurrent(next)
+    selDotRef.current = null
     setSelDot(null); setDragPt(null)
+
+    if (isGameOver) {
+      // Determine winner for sound — compare scores after this move
+      const sX = res.boxes.filter(b => b === 'X').length
+      const sO = res.boxes.filter(b => b === 'O').length
+      const sY = res.boxes.filter(b => b === 'Y').length
+      const maxS = Math.max(sX, sO, numPlayers === 3 ? sY : 0)
+      const winners = (['X','O'] as Player[]).concat(numPlayers===3?['Y' as Player]:[]).filter(p => res.boxes.filter(b=>b===p).length===maxS)
+      if (winners.length > 1) playSound('tie')
+      else if (winners[0] === 'X') playSound(mode === 'computer' ? 'win' : 'win')
+      else playSound(mode === 'computer' ? 'lose' : 'win')
+    } else if (res.extra) {
+      playSound('score')
+    } else {
+      playSound('turn')
+    }
 
     if (mode === 'computer' && numPlayers === 2 && next === 'O') {
       aiPendingRef.current = true
@@ -4331,8 +4414,20 @@ function DotsAndBoxesPage() {
         const r2   = dbApply(ch, cv, cb, move.isH, move.idx, 'O')
         const np: Player = r2.extra ? 'O' : 'X'
         setHLines(r2.h); setVLines(r2.v); setBBoxes(r2.boxes); setCurrent(np)
-        if (r2.extra) setTimeout(() => runAI(r2.h, r2.v, r2.boxes), 420)
-        else aiPendingRef.current = false
+        const aiGameOver = r2.boxes.every(b => b !== null)
+        if (aiGameOver) {
+          const sX2 = r2.boxes.filter(b=>b==='X').length, sO2 = r2.boxes.filter(b=>b==='O').length
+          if (sX2 > sO2) playSound('win')
+          else if (sO2 > sX2) playSound('lose')
+          else playSound('tie')
+          aiPendingRef.current = false
+        } else if (r2.extra) {
+          playSound('score')
+          setTimeout(() => runAI(r2.h, r2.v, r2.boxes), 420)
+        } else {
+          playSound('turn')
+          aiPendingRef.current = false
+        }
       }
       setTimeout(() => runAI(res.h, res.v, res.boxes), 500)
     }
@@ -4350,24 +4445,26 @@ function DotsAndBoxesPage() {
       ref={dbSvgRef}
       viewBox={`0 0 ${DB_VB} ${DB_VB}`}
       preserveAspectRatio="xMidYMid meet"
-      style={{ width: '100%', height: '100%', display: 'block', overflow: 'visible', touchAction: 'none' }}
+      style={{ width: '100%', aspectRatio: '1 / 1', maxHeight: '100%', display: 'block', overflow: 'visible', touchAction: 'none' }}
       onPointerMove={e => {
-        if (!selDot) return
+        if (!selDotRef.current) return
         const pt = toDBSVGPt(e); if (pt) setDragPt({ x: pt.x, y: pt.y })
       }}
       onPointerUp={e => {
-        if (!selDot) return
+        const sd = selDotRef.current
+        if (!sd) return
         const pt = toDBSVGPt(e)
         if (pt) {
           const dot = nearestDBDot(pt, DB_VB_CELL * 0.55)
-          if (dot && !(dot.r === selDot.r && dot.c === selDot.c)) {
-            const line = adjacentLine(selDot.r, selDot.c, dot.r, dot.c)
+          if (dot && !(dot.r === sd.r && dot.c === sd.c)) {
+            const line = adjacentLine(sd.r, sd.c, dot.r, dot.c)
             if (line) { commitLine(line.isH, line.idx); return }
           }
         }
+        selDotRef.current = null
         setSelDot(null); setDragPt(null)
       }}
-      onPointerLeave={() => { setSelDot(null); setDragPt(null) }}
+      onPointerCancel={() => { selDotRef.current = null; setSelDot(null); setDragPt(null) }}
     >
       {bBoxes.map((owner, i) => {
         if (!owner) return null
@@ -4405,15 +4502,22 @@ function DotsAndBoxesPage() {
           const rr   = isSel || isSnap ? DB_DOT_SEL : DB_DOT_R
           const fill = isSel ? P_COLOR[current] : isSnap ? P_COLOR[current] + 'cc' : '#ccc'
           return (
-            <circle key={`d${r}-${c}`} cx={x} cy={y} r={rr} fill={fill}
-              style={{ cursor: canDrag ? 'grab' : 'default', transition: 'r 0.1s, fill 0.1s' }}
-              onPointerDown={e => {
-                if (!canDrag) return
-                e.currentTarget.setPointerCapture(e.pointerId)
-                setSelDot({ r, c })
-                const pt = toDBSVGPt(e); if (pt) setDragPt({ x: pt.x, y: pt.y })
-              }}
-            />
+            <g key={`d${r}-${c}`}>
+              {/* Visual dot */}
+              <circle cx={x} cy={y} r={rr} fill={fill}
+                style={{ transition: 'r 0.1s, fill 0.1s', pointerEvents: 'none' }} />
+              {/* Large invisible touch target */}
+              <circle cx={x} cy={y} r={DB_HIT_R} fill="transparent"
+                style={{ cursor: canDrag ? 'grab' : 'default' }}
+                onPointerDown={e => {
+                  if (!canDrag) return
+                  e.currentTarget.setPointerCapture(e.pointerId)
+                  selDotRef.current = { r, c }
+                  setSelDot({ r, c })
+                  const pt = toDBSVGPt(e); if (pt) setDragPt({ x: pt.x, y: pt.y })
+                }}
+              />
+            </g>
           )
         })
       )}
@@ -4433,11 +4537,10 @@ function DotsAndBoxesPage() {
     const winners = players.filter(p => scores3[p] === maxScore)
     return winners.length > 1 ? '#888' : P_COLOR[winners[0]]
   })()
-  const gameOverOverlay = gameOver ? (
-    <Ch4GameOverOverlay
+  const gameOverBanner = gameOver ? (
+    <Ch4GameOverBanner
       winnerLabel={dbWinnerLabel}
       winnerColor={dbWinnerColor}
-      onPlayAgain={() => resetGame()}
     />
   ) : null
 
@@ -4466,22 +4569,22 @@ function DotsAndBoxesPage() {
     return (
       <>
         <div style={{ ...ch4CanvasStyle, flex: 1, display: 'flex', flexDirection: 'row', overflow: 'hidden' }}>
+          <Ch4PlayAgainBtn show={gameOver} onClick={resetGame} />
           {/* Left column: turn + score + add/remove player */}
           <div style={{ flexShrink: 0, display: 'flex', flexDirection: 'column', alignItems: 'flex-start', justifyContent: 'space-between', padding: '24px 20px' }}>
-            <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
+            {gameOver ? gameOverBanner : <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
               <TurnIndicator current={current} gameOver={gameOver} mode={mode} P_COLOR={P_COLOR} isLandscape={true} scores={dbScores} players={players} />
               <PlayerCountControl count={numPlayers} onChange={changePlayerCount} isLandscape={true} />
-            </div>
+            </div>}
             <ModeSelector mode={mode} onReset={resetGame} />
           </div>
-          {/* Board */}
-          <div style={{ flex: 1, position: 'relative', display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 16, boxSizing: 'border-box' }}>
+          {/* Board — no overlay */}
+          <div style={{ flex: 1, minHeight: 0, display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 16, boxSizing: 'border-box' }}>
             {boardSvg}
-            {gameOverOverlay}
           </div>
         </div>
         <IntroText>{dbCaption}</IntroText>
-        <SetDone done={gameOver} />
+        <SetDone celebrate={false} done={gameOver} />
         {rulesOpen && <Ch4RulesModal title="How to play Dots & Boxes" onClose={() => setRulesOpen(false)}>{dbRules}</Ch4RulesModal>}
       </>
     )
@@ -4489,24 +4592,26 @@ function DotsAndBoxesPage() {
 
   return (
     <>
-      <div style={{ ...ch4CanvasStyle, flex: 1, display: 'flex', flexDirection: 'column', overflow: 'hidden' }}>
-        {/* Top: turn indicator + score, with +/- inline */}
-        <div style={{ display: 'flex', flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 20, padding: '14px 16px', flexShrink: 0 }}>
-          <TurnIndicator current={current} gameOver={gameOver} mode={mode} P_COLOR={P_COLOR} isLandscape={false} scores={dbScores} players={players} />
-          <PlayerCountControl count={numPlayers} onChange={changePlayerCount} isLandscape={false} />
+      <div style={{ ...ch4CanvasStyle, flex: 1, display: 'flex', flexDirection: 'column', overflow: 'hidden', justifyContent: 'center' }}>
+          <Ch4PlayAgainBtn show={gameOver} onClick={resetGame} />
+        {/* Top: banner when over, turn indicator + score otherwise */}
+        <div style={{ display: 'flex', flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 20, padding: '0 16px', height: 60, flexShrink: 0 }}>
+          {gameOver ? gameOverBanner : <>
+            <TurnIndicator current={current} gameOver={gameOver} mode={mode} P_COLOR={P_COLOR} isLandscape={false} scores={dbScores} players={players} />
+            <PlayerCountControl count={numPlayers} onChange={changePlayerCount} isLandscape={false} />
+          </>}
         </div>
-        {/* Middle: board */}
-        <div style={{ flex: 1, position: 'relative', display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 16, boxSizing: 'border-box' }}>
+        {/* Middle: board — no overlay */}
+        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 16, boxSizing: 'border-box' }}>
           {boardSvg}
-          {gameOverOverlay}
         </div>
-        {/* Bottom: mode switch */}
-        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', padding: '12px 16px', flexShrink: 0 }}>
+        {/* Bottom: always mode selector */}
+        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', padding: '0 16px', height: 48, flexShrink: 0 }}>
           <ModeSelector mode={mode} onReset={resetGame} />
         </div>
       </div>
       <IntroText>{dbCaption}</IntroText>
-      <SetDone done={gameOver} />
+      <SetDone celebrate={false} done={gameOver} />
       {rulesOpen && <Ch4RulesModal title="How to play Dots & Boxes" onClose={() => setRulesOpen(false)}>{dbRules}</Ch4RulesModal>}
     </>
   )
@@ -4604,6 +4709,45 @@ function dtGenerateDots(): {x:number;y:number}[] {
   return dots
 }
 
+/** Returns true if point (px,py) is strictly inside triangle (ax,ay)-(bx,by)-(cx,cy). */
+function dtPtInTri(px:number,py:number, ax:number,ay:number, bx:number,by:number, cx:number,cy:number): boolean {
+  const d1 = (px-bx)*(ay-by)-(ax-bx)*(py-by)
+  const d2 = (px-cx)*(by-cy)-(bx-cx)*(py-cy)
+  const d3 = (px-ax)*(cy-ay)-(cx-ax)*(py-ay)
+  if (d1===0||d2===0||d3===0) return false  // on boundary → not strictly inside
+  return (d1>0&&d2>0&&d3>0)||(d1<0&&d2<0&&d3<0)
+}
+
+/** Returns true if triangle indices t1 and t2 have overlapping interiors.
+ *  Since edges cannot cross in this game, the only overlap case is one triangle
+ *  strictly containing a vertex of the other. */
+function dtTrianglesOverlap(
+  t1: [number,number,number], t2: [number,number,number],
+  dots: {x:number;y:number}[]
+): boolean {
+  const [a1,b1,c1] = t1.map(i=>dots[i])
+  const [a2,b2,c2] = t2.map(i=>dots[i])
+  for (const p of [a2,b2,c2])
+    if (dtPtInTri(p.x,p.y, a1.x,a1.y, b1.x,b1.y, c1.x,c1.y)) return true
+  for (const p of [a1,b1,c1])
+    if (dtPtInTri(p.x,p.y, a2.x,a2.y, b2.x,b2.y, c2.x,c2.y)) return true
+  return false
+}
+
+/** Returns true if any dot (other than the 3 vertices) lies strictly inside the triangle. */
+function dtTriHasInteriorDot(
+  tri: [number,number,number],
+  dots: {x:number;y:number}[]
+): boolean {
+  const [ai,bi,ci] = tri
+  const {x:ax,y:ay} = dots[ai], {x:bx,y:by} = dots[bi], {x:cx,y:cy} = dots[ci]
+  for (let i = 0; i < dots.length; i++) {
+    if (i === ai || i === bi || i === ci) continue
+    if (dtPtInTri(dots[i].x, dots[i].y, ax, ay, bx, by, cx, cy)) return true
+  }
+  return false
+}
+
 /** Returns true if proposed edge (ai,bi) crosses any edge in drawnPairs (sharing an endpoint is OK). */
 function dtEdgeCrossesDrawn(
   ai: number, bi: number,
@@ -4634,6 +4778,8 @@ function DotTrianglesPage() {
   const [selDot,  setSelDot]  = useState<number|null>(null)
   const [dragPt,  setDragPt]  = useState<{x:number;y:number}|null>(null)
   const svgRef = useRef<SVGSVGElement>(null)
+  // Ref mirrors selDot for pointer handlers — avoids stale-closure race on touch
+  const selDotRef = useRef<number|null>(null)
 
   const dots = useMemo(() => dtGenerateDots(), [gameId])
 
@@ -4668,7 +4814,9 @@ function DotTrianglesPage() {
     setMode(nm); setNumPlayers(np); setGameId(id => id+1)
     setUsedEdges(new Set()); setEdgeOwner({}); setClaimed([])
     setScoreX(0); setScoreO(0); setScoreY(0); setCurrent('X')
-    setGameOver(false); setSelDot(null); setDragPt(null)
+    setGameOver(false)
+    selDotRef.current = null
+    setSelDot(null); setDragPt(null)
   }
 
   function changePlayerCount(n: 2 | 3) { resetGame(n === 3 ? 'two-player' : mode, n) }
@@ -4676,15 +4824,20 @@ function DotTrianglesPage() {
   function commitEdge(a: number, b: number, who: Player = current) {
     const key = dtEdgeKey(a,b)
     if (usedEdges.has(key)) return
+    if (who === 'X') sfxUnlock()
     const newUsed = new Set([...usedEdges, key])
     const newOwner = { ...edgeOwner, [key]: who }
     // Triangles newly completed: find all c where (a,c) and (b,c) were already drawn
+    // and the resulting triangle doesn't overlap any already-claimed triangle.
     const newTris: [number,number,number][] = []
     for (let c=0; c<dots.length; c++) {
       if (c===a || c===b) continue
       if (usedEdges.has(dtEdgeKey(a,c)) && usedEdges.has(dtEdgeKey(b,c))) {
         const tri = [a,b,c].sort((x,y)=>x-y) as [number,number,number]
-        newTris.push(tri)
+        if (!claimed.some(cl => dtTrianglesOverlap(tri, cl.tri, dots)) &&
+            !dtTriHasInteriorDot(tri, dots)) {
+          newTris.push(tri)
+        }
       }
     }
     const newClaimed = [...claimed, ...newTris.map(tri => ({ tri, player: who }))]
@@ -4692,7 +4845,9 @@ function DotTrianglesPage() {
     const no = scoreO + (who==='O' ? newTris.length : 0)
     const ny = scoreY + (who==='Y' ? newTris.length : 0)
     setUsedEdges(newUsed); setEdgeOwner(newOwner); setClaimed(newClaimed)
-    setScoreX(nx); setScoreO(no); setScoreY(ny); setSelDot(null); setDragPt(null)
+    setScoreX(nx); setScoreO(no); setScoreY(ny)
+    selDotRef.current = null
+    setSelDot(null); setDragPt(null)
     // Recompute available edges after this addition to check game over
     const newDrawnPairs = [...drawnPairs, [a,b] as [number,number]]
     // Check if any edges can still be drawn after this move
@@ -4702,9 +4857,21 @@ function DotTrianglesPage() {
       if (newUsed.has(dtEdgeKey(i,j))) continue
       if (!dtEdgeCrossesDrawn(i,j,dots,newDrawnPairs)) { hasAny=true; break outer }
     }
-    if (!hasAny) { setGameOver(true) }
-    else if (newTris.length === 0) { setCurrent(nextTurn(who, numPlayers)) }
-    // else same player goes again (scored a triangle)
+    if (!hasAny) {
+      setGameOver(true)
+      // Game over sound — compare final scores
+      const maxS = Math.max(nx, no, numPlayers===3 ? ny : 0)
+      const winPlayers = (['X','O'] as Player[]).concat(numPlayers===3?['Y' as Player]:[]).filter(p => (p==='X'?nx:p==='O'?no:ny)===maxS)
+      if (winPlayers.length > 1) playSound('tie')
+      else if (winPlayers[0]==='X') playSound(mode==='computer' ? 'win' : 'win')
+      else playSound(mode==='computer' ? 'lose' : 'win')
+    } else if (newTris.length > 0) {
+      playSound('score')
+      // same player goes again (scored a triangle)
+    } else {
+      playSound('turn')
+      setCurrent(nextTurn(who, numPlayers))
+    }
   }
 
   // Computer move — prefers edges that complete the most triangles
@@ -4714,12 +4881,14 @@ function DotTrianglesPage() {
     const t = setTimeout(() => {
       let best = availEdges[0], bestN = -1
       for (const [a,b] of availEdges) {
-        const k = dtEdgeKey(a,b)
-        const tmp = new Set([...usedEdges, k])
         let n = 0
         for (let c=0; c<dots.length; c++) {
           if (c===a||c===b) continue
-          if (usedEdges.has(dtEdgeKey(a,c)) && usedEdges.has(dtEdgeKey(b,c))) n++
+          if (usedEdges.has(dtEdgeKey(a,c)) && usedEdges.has(dtEdgeKey(b,c))) {
+            const tri = [a,b,c].sort((x,y)=>x-y) as [number,number,number]
+            if (!claimed.some(cl => dtTrianglesOverlap(tri, cl.tri, dots)) &&
+                !dtTriHasInteriorDot(tri, dots)) n++
+          }
         }
         if (n > bestN) { bestN = n; best = [a,b] }
       }
@@ -4752,21 +4921,23 @@ function DotTrianglesPage() {
 
   const svgBoard = (
     <svg ref={svgRef} viewBox={`0 0 ${DT_VB} ${DT_VB}`}
-      style={{ width:'100%', height:'100%', display:'block', overflow:'visible', touchAction:'none' }}
+      style={{ width:'100%', aspectRatio:'1 / 1', maxHeight:'100%', display:'block', overflow:'visible', touchAction:'none' }}
       onPointerMove={e => {
-        if (selDot===null) return
+        if (selDotRef.current === null) return
         const pt = toSVGPt(e); if (pt) setDragPt({x:pt.x,y:pt.y})
       }}
       onPointerUp={e => {
-        if (selDot===null) return
+        const sd = selDotRef.current
+        if (sd === null) return
         const pt = toSVGPt(e)
         if (pt && isHumanTurn) {
-          const n = nearestAvailDot(pt, selDot, 26)
-          if (n!==null) { commitEdge(selDot,n); return }
+          const n = nearestAvailDot(pt, sd, 26)
+          if (n!==null) { commitEdge(sd,n); return }
         }
+        selDotRef.current = null
         setSelDot(null); setDragPt(null)
       }}
-      onPointerLeave={() => { setSelDot(null); setDragPt(null) }}
+      onPointerCancel={() => { selDotRef.current = null; setSelDot(null); setDragPt(null) }}
     >
       {/* Claimed triangles */}
       {claimed.map(({tri:[a,b,c],player},i) => (
@@ -4797,17 +4968,26 @@ function DotTrianglesPage() {
         const isSel  = selDot===i
         const isSnap = snapDot===i
         const canDrag = isHumanTurn && draggableDots.has(i)
-        return <circle key={i} cx={d.x} cy={d.y}
-          r={isSel||isSnap ? CH4_DOT_SEL : CH4_DOT_R}
-          fill={isSel ? P_COLOR[current] : isSnap ? P_COLOR[current]+'cc' : '#ccc'}
-          style={{ cursor: canDrag?'grab':'default', transition:'r 0.1s, fill 0.1s' }}
-          onPointerDown={e => {
-            if (!canDrag) return
-            e.currentTarget.setPointerCapture(e.pointerId)
-            setSelDot(i)
-            const pt = toSVGPt(e); if (pt) setDragPt({x:pt.x,y:pt.y})
-          }}
-        />
+        return (
+          <g key={i}>
+            {/* Visual dot */}
+            <circle cx={d.x} cy={d.y}
+              r={isSel||isSnap ? CH4_DOT_SEL : CH4_DOT_R}
+              fill={isSel ? P_COLOR[current] : isSnap ? P_COLOR[current]+'cc' : '#ccc'}
+              style={{ transition:'r 0.1s, fill 0.1s', pointerEvents: 'none' }} />
+            {/* Large invisible touch target */}
+            <circle cx={d.x} cy={d.y} r={DT_HIT_R} fill="transparent"
+              style={{ cursor: canDrag?'grab':'default' }}
+              onPointerDown={e => {
+                if (!canDrag) return
+                e.currentTarget.setPointerCapture(e.pointerId)
+                selDotRef.current = i
+                setSelDot(i)
+                const pt = toSVGPt(e); if (pt) setDragPt({x:pt.x,y:pt.y})
+              }}
+            />
+          </g>
+        )
       })}
     </svg>
   )
@@ -4825,11 +5005,10 @@ function DotTrianglesPage() {
     const winners = players.filter(p => (dtScores[p as keyof typeof dtScores] ?? 0) === maxScore)
     return winners.length > 1 ? '#888' : P_COLOR[winners[0]]
   })()
-  const gameOverOverlay = gameOver ? (
-    <Ch4GameOverOverlay
+  const gameOverBanner = gameOver ? (
+    <Ch4GameOverBanner
       winnerLabel={dtWinnerLabel}
       winnerColor={dtWinnerColor}
-      onPlayAgain={() => resetGame()}
     />
   ) : null
 
@@ -4855,20 +5034,20 @@ function DotTrianglesPage() {
     return (
       <>
         <div style={{ ...ch4CanvasStyle, flex:1, display:'flex', flexDirection:'row', overflow:'hidden' }}>
+          <Ch4PlayAgainBtn show={gameOver} onClick={resetGame} />
           <div style={{ flexShrink:0, display:'flex', flexDirection:'column', alignItems:'flex-start', justifyContent:'space-between', padding:'24px 20px' }}>
-            <div style={{ display:'flex', flexDirection:'column', gap:10 }}>
+            {gameOver ? gameOverBanner : <div style={{ display:'flex', flexDirection:'column', gap:10 }}>
               <TurnIndicator current={current} gameOver={gameOver} mode={mode} P_COLOR={P_COLOR} isLandscape={true} scores={dtScores} players={players} />
               <PlayerCountControl count={numPlayers} onChange={changePlayerCount} isLandscape={true} />
-            </div>
+            </div>}
             <ModeSelector mode={mode} onReset={resetGame} />
           </div>
-          <div style={{ flex:1, position:'relative', display:'flex', alignItems:'center', justifyContent:'center', padding:24, boxSizing:'border-box' }}>
+          <div style={{ flex:1, minHeight:0, display:'flex', alignItems:'center', justifyContent:'center', padding:24, boxSizing:'border-box' }}>
             {svgBoard}
-            {gameOverOverlay}
           </div>
         </div>
         <IntroText>{dtCaption}</IntroText>
-        <SetDone done={gameOver} />
+        <SetDone celebrate={false} done={gameOver} />
         {rulesOpen && <Ch4RulesModal title="How to play Dot Triangles" onClose={() => setRulesOpen(false)}>{dtRules}</Ch4RulesModal>}
       </>
     )
@@ -4876,21 +5055,23 @@ function DotTrianglesPage() {
 
   return (
     <>
-      <div style={{ ...ch4CanvasStyle, flex:1, display:'flex', flexDirection:'column', overflow:'hidden' }}>
-        <div style={{ display:'flex', flexDirection:'row', alignItems:'center', justifyContent:'center', gap:20, padding:'14px 16px', flexShrink:0 }}>
-          <TurnIndicator current={current} gameOver={gameOver} mode={mode} P_COLOR={P_COLOR} isLandscape={false} scores={dtScores} players={players} />
-          <PlayerCountControl count={numPlayers} onChange={changePlayerCount} isLandscape={false} />
+      <div style={{ ...ch4CanvasStyle, flex:1, display:'flex', flexDirection:'column', overflow:'hidden', justifyContent:'center' }}>
+          <Ch4PlayAgainBtn show={gameOver} onClick={resetGame} />
+        <div style={{ display:'flex', flexDirection:'row', alignItems:'center', justifyContent:'center', gap:20, padding:'0 16px', height:60, flexShrink:0 }}>
+          {gameOver ? gameOverBanner : <>
+            <TurnIndicator current={current} gameOver={gameOver} mode={mode} P_COLOR={P_COLOR} isLandscape={false} scores={dtScores} players={players} />
+            <PlayerCountControl count={numPlayers} onChange={changePlayerCount} isLandscape={false} />
+          </>}
         </div>
-        <div style={{ flex:1, position:'relative', display:'flex', alignItems:'center', justifyContent:'center', padding:20, boxSizing:'border-box' }}>
+        <div style={{ display:'flex', alignItems:'center', justifyContent:'center', padding:20, boxSizing:'border-box' }}>
           {svgBoard}
-          {gameOverOverlay}
         </div>
-        <div style={{ display:'flex', alignItems:'center', justifyContent:'center', padding:'12px 16px', flexShrink:0 }}>
+        <div style={{ display:'flex', alignItems:'center', justifyContent:'center', padding:'0 16px', height:48, flexShrink:0 }}>
           <ModeSelector mode={mode} onReset={resetGame} />
         </div>
       </div>
       <IntroText>{dtCaption}</IntroText>
-      <SetDone done={gameOver} />
+      <SetDone celebrate={false} done={gameOver} />
       {rulesOpen && <Ch4RulesModal title="How to play Dot Triangles" onClose={() => setRulesOpen(false)}>{dtRules}</Ch4RulesModal>}
     </>
   )
@@ -4953,6 +5134,7 @@ function RectangleGamePage() {
 
   function commitRect(r1: number, c1: number, r2: number, c2: number, who: 'X' | 'O' = current) {
     if (!rgIsValid(r1, c1, r2, c2, hUsed, vUsed)) return
+    if (who === 'X') sfxUnlock()
     const { h, v } = rgRectSegs(r1, c1, r2, c2)
     const newH = new Set(hUsed); h.forEach(s => newH.add(s))
     const newV = new Set(vUsed); v.forEach(s => newV.add(s))
@@ -4962,8 +5144,10 @@ function RectangleGamePage() {
     const next: 'X' | 'O' = who === 'X' ? 'O' : 'X'
     if (rgAllValid(newH, newV).length === 0) {
       setGameOver(true); setWinner(who)   // next player can't move → current wins
+      playSound(who === 'X' ? (mode === 'computer' ? 'win' : 'win') : (mode === 'computer' ? 'lose' : 'win'))
     } else {
       setCurrent(next)
+      playSound('turn')
     }
   }
 
@@ -5004,7 +5188,7 @@ function RectangleGamePage() {
 
   const svgBoard = (
     <svg ref={svgRef} viewBox="0 0 100 100"
-      style={{ width: '100%', height: '100%', touchAction: 'none', overflow: 'visible' }}
+      style={{ width: '100%', aspectRatio: '1 / 1', maxHeight: '100%', touchAction: 'none', overflow: 'visible' }}
       onPointerMove={e => {
         if (!dragStart) return
         const pt = toSVGPt(e); if (pt) setDragCur(rgNearestDot(pt))
@@ -5080,11 +5264,10 @@ function RectangleGamePage() {
   const rgWinnerLabel = winner
     ? (mode === 'computer' ? (winner === 'X' ? 'You win! 🎉' : 'I win! 😄') : (winner === 'X' ? 'Blue wins! 🎉' : 'Red wins!'))
     : ''
-  const gameOverOverlay = gameOver && winner ? (
-    <Ch4GameOverOverlay
+  const gameOverBanner = gameOver && winner ? (
+    <Ch4GameOverBanner
       winnerLabel={rgWinnerLabel}
       winnerColor={P_COLOR[winner]}
-      onPlayAgain={() => resetGame()}
     />
   ) : null
 
@@ -5119,17 +5302,17 @@ function RectangleGamePage() {
     return (
       <>
         <div style={{ ...ch4CanvasStyle, flex: 1, display: 'flex', flexDirection: 'row', overflow: 'hidden' }}>
+          <Ch4PlayAgainBtn show={gameOver} onClick={resetGame} />
           <div style={{ flexShrink: 0, display: 'flex', flexDirection: 'column', alignItems: 'flex-start', justifyContent: 'space-between', padding: '24px 20px' }}>
-            {turnIndicator}
+            {gameOver ? gameOverBanner : turnIndicator}
             {modeSelector}
           </div>
-          <div style={{ flex: 1, position: 'relative', display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 24, boxSizing: 'border-box' }}>
+          <div style={{ flex: 1, minHeight: 0, display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 24, boxSizing: 'border-box' }}>
             {svgBoard}
-            {gameOverOverlay}
           </div>
         </div>
         <IntroText>{rgCaption}</IntroText>
-        <SetDone done={gameOver} />
+        <SetDone celebrate={false} done={gameOver} />
         {rulesOpen && <Ch4RulesModal title="How to play Rectangle Game" onClose={() => setRulesOpen(false)}>{rgRules}</Ch4RulesModal>}
       </>
     )
@@ -5137,20 +5320,20 @@ function RectangleGamePage() {
 
   return (
     <>
-      <div style={{ ...ch4CanvasStyle, flex: 1, display: 'flex', flexDirection: 'column', overflow: 'hidden' }}>
-        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', padding: '14px 16px', flexShrink: 0 }}>
-          {turnIndicator}
+      <div style={{ ...ch4CanvasStyle, flex: 1, display: 'flex', flexDirection: 'column', overflow: 'hidden', justifyContent: 'center' }}>
+          <Ch4PlayAgainBtn show={gameOver} onClick={resetGame} />
+        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', padding: '0 16px', height: 60, flexShrink: 0 }}>
+          {gameOver ? gameOverBanner : turnIndicator}
         </div>
-        <div style={{ flex: 1, position: 'relative', display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 20, boxSizing: 'border-box' }}>
+        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 20, boxSizing: 'border-box' }}>
           {svgBoard}
-          {gameOverOverlay}
         </div>
-        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', padding: '12px 16px', flexShrink: 0 }}>
+        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', padding: '0 16px', height: 48, flexShrink: 0 }}>
           {modeSelector}
         </div>
       </div>
       <IntroText>{rgCaption}</IntroText>
-      <SetDone done={gameOver} />
+      <SetDone celebrate={false} done={gameOver} />
       {rulesOpen && <Ch4RulesModal title="How to play Rectangle Game" onClose={() => setRulesOpen(false)}>{rgRules}</Ch4RulesModal>}
     </>
   )
@@ -5218,9 +5401,9 @@ function jmspDests(from: JMSPPiece, pieces: JMSPPiece[]): { row: number; col: nu
       const key = `${nr},${nc}`
       if (vis.has(key)) continue
       const occ = jmspAt(pieces, nr, nc)
-      // Intermediate: enemy blocks; own allows pass-through
-      if (left > 1 && occ && occ.player !== from.player) continue
-      // Last step: can't land on own piece
+      // Intermediate: any piece blocks passage (can only eat on the final step)
+      if (left > 1 && occ) continue
+      // Last step: can capture enemy, can't land on own piece
       if (left === 1 && occ && occ.player === from.player) continue
       vis.add(key); dfs(nr, nc, left - 1); vis.delete(key)
     }
@@ -5243,7 +5426,7 @@ function jmspPath(from: JMSPPiece, to: {row:number;col:number}, pieces: JMSPPiec
       const key = `${nr},${nc}`
       if (vis.has(key)) continue
       const occ = jmspAt(pieces, nr, nc)
-      if (left > 1 && occ && occ.player !== from.player) continue
+      if (left > 1 && occ) continue
       if (left === 1 && occ && occ.player === from.player) continue
       vis.add(key); dfs(nr, nc, left - 1, [...path, {row:nr,col:nc}]); vis.delete(key)
     }
@@ -5280,6 +5463,10 @@ function JmspPage() {
   const [rulesOpen, setRulesOpen] = useState(false)
   const svgRef    = useRef<SVGSVGElement>(null)
   const aiCancel  = useRef(false)
+  // Refs mirror drag state for pointer handlers — avoids stale-closure race on touch
+  const selIdRef    = useRef<string|null>(null)
+  const selPieceRef = useRef<JMSPPiece|null>(null)
+  const dragPathRef = useRef<{row:number;col:number}[]>([])
   useEffect(() => () => { aiCancel.current = true }, [])
 
   const P_COLOR: Record<Player, string> = { X: BLUE, O: RED, Y: YELLOW }
@@ -5328,43 +5515,55 @@ function JmspPage() {
     const last = prev[prev.length - 1]
     if (Math.abs(br - last.row) + Math.abs(bc - last.col) !== 1) return prev
 
-    // Occupancy: intermediate steps allow own pieces (pass-through), enemy blocks.
-    // Last step: can capture enemy, can't land on own.
+    // Occupancy: any piece blocks intermediate steps (only the final step can capture an enemy).
     const isLastStep = prev.length === JMSP_STEPS
     const occ = jmspAt(pieces, br, bc)
-    if (!isLastStep && occ && occ.player !== piece.player) return prev  // enemy blocks intermediate
-    if (isLastStep && occ && occ.player === piece.player) return prev   // can't land on own
+    if (!isLastStep && occ) return prev                                 // any piece blocks intermediate
+    if (isLastStep && occ && occ.player === piece.player) return prev  // can't land on own
 
     return [...prev, {row:br, col:bc}]
   }
 
   /** Commit a move: update pieces, switch turn, check win. Does NOT clear selection. */
   function commitMove(pieceId: string, to: {row:number;col:number}) {
+    const captured = pieces.some(p => p.row === to.row && p.col === to.col)
     const newPieces = pieces
       .filter(p => !(p.row === to.row && p.col === to.col))
       .map(p => p.id === pieceId ? {...p, row: to.row, col: to.col} : p)
     const next: 'X'|'O' = current === 'X' ? 'O' : 'X'
     const opCount = newPieces.filter(p => p.player === next).length
     setPieces(newPieces)
-    if (opCount === 0) { setGameOver(true); setWinner(current) }
-    else setCurrent(next)
+    if (opCount === 0) {
+      setGameOver(true); setWinner(current)
+      playSound(current === 'X' ? (mode === 'computer' ? 'win' : 'win') : (mode === 'computer' ? 'lose' : 'win'))
+    } else {
+      if (captured) playSound('score')
+      else playSound('turn')
+      setCurrent(next)
+    }
   }
 
   function doMove(pieceId: string, to: {row:number;col:number}) {
     commitMove(pieceId, to)
+    selIdRef.current = null; selPieceRef.current = null; dragPathRef.current = []
     setSelId(null); setDragPath([])
   }
 
   /** Start the slide animation for a completed drag path. */
   function startAnim(pieceId: string, path: {row:number;col:number}[]) {
+    selIdRef.current = null; selPieceRef.current = null; dragPathRef.current = []
     setSelId(null); setDragPath([])
     setAnimState({ pieceId, path, step: 0 })
   }
 
-  function cancelSel() { setSelId(null); setDragPath([]) }
+  function cancelSel() {
+    selIdRef.current = null; selPieceRef.current = null; dragPathRef.current = []
+    setSelId(null); setDragPath([])
+  }
 
   function resetGame(m: TTTMode = mode) {
     aiCancel.current = true
+    selIdRef.current = null; selPieceRef.current = null; dragPathRef.current = []
     setMode(m); setPieces(JMSP_INIT.map(p => ({...p})))
     setCurrent('X'); setSelId(null); setDragPath([])
     setAnimState(null); setGameOver(false); setWinner(null)
@@ -5408,21 +5607,24 @@ function JmspPage() {
 
   const svgBoard = (
     <svg ref={svgRef} viewBox={`0 0 ${JMSP_VB_W} ${JMSP_VB_H}`}
-      style={{ width:'100%', height:'100%', display:'block', touchAction:'none', overflow:'visible' }}
+      style={{ width:'100%', aspectRatio:'1 / 1', maxHeight:'100%', display:'block', touchAction:'none', overflow:'visible' }}
       onPointerMove={e => {
-        if (!selId || !selPiece) return
+        if (!selIdRef.current || !selPieceRef.current) return
         const pt = toSVGPt(e); if (!pt) return
-        setDragPath(prev => updatePath(prev, pt, selPiece))
+        const newPath = updatePath(dragPathRef.current, pt, selPieceRef.current)
+        dragPathRef.current = newPath
+        setDragPath(newPath)
       }}
       onPointerUp={() => {
-        if (!selId) return
-        if (pathComplete && dragPath.length > 0) {
-          startAnim(selId, dragPath)
+        const id = selIdRef.current; const path = dragPathRef.current
+        if (!id) return
+        if (path.length === JMSP_STEPS + 1) {
+          startAnim(id, path)
         } else {
           cancelSel()
         }
       }}
-      onPointerLeave={cancelSel}
+      onPointerCancel={cancelSel}
     >
       {/* Cross-shaped grid: five square cells matching the reference SVG */}
       {JMSP_CELLS.map(({r, c}) => {
@@ -5460,16 +5662,21 @@ function JmspPage() {
         return (
           <circle key={p.id} cx={x} cy={y} r={isSel ? JMSP_PR+3 : JMSP_PR}
             fill={P_COLOR[p.player]}
+            stroke={isSel ? '#fff' : 'none'} strokeWidth={isSel ? 2.5 : 0}
             style={{
               cursor: canSel ? 'grab' : 'default',
               transition: isAnimThis ? 'cx 0.18s ease, cy 0.18s ease' : 'r 0.1s',
-              filter: isSel ? `drop-shadow(0 0 7px ${P_COLOR[p.player]}99)` : 'none',
             }}
             onPointerDown={e => {
               if (!canSel) return
               e.currentTarget.setPointerCapture(e.pointerId)
+              sfxUnlock()
+              const initPath = [{row:p.row, col:p.col}]
+              selIdRef.current = p.id
+              selPieceRef.current = p
+              dragPathRef.current = initPath
               setSelId(p.id)
-              setDragPath([{row:p.row, col:p.col}])
+              setDragPath(initPath)
             }}
           />
         )
@@ -5481,8 +5688,11 @@ function JmspPage() {
   const winnerLabel = winner
     ? (mode==='computer' ? (winner==='X'?'You win! 🎉':'I win! 😄') : (winner==='X'?'Blue wins! 🎉':'Red wins!'))
     : ''
-  const gameOverOverlay = (gameOver && winner) ? (
-    <Ch4GameOverOverlay winnerLabel={winnerLabel} winnerColor={P_COLOR[winner]} onPlayAgain={resetGame} />
+  const gameOverBanner = (gameOver && winner) ? (
+    <Ch4GameOverBanner
+      winnerLabel={winnerLabel}
+      winnerColor={winner === 'X' ? '#3b82f6' : '#ef4444'}
+    />
   ) : null
 
   // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -5500,35 +5710,37 @@ function JmspPage() {
     return (
       <>
         <div style={{...ch4CanvasStyle, flex:1, display:'flex', flexDirection:'row', overflow:'hidden'}}>
+          <Ch4PlayAgainBtn show={gameOver} onClick={resetGame} />
           <div style={{flexShrink:0, display:'flex', flexDirection:'column', alignItems:'flex-start', justifyContent:'space-between', padding:'24px 20px'}}>
-            <TurnIndicator current={current} gameOver={gameOver} mode={mode} P_COLOR={P_COLOR} isLandscape={true} />
+            {gameOver ? gameOverBanner : <TurnIndicator current={current} gameOver={gameOver} mode={mode} P_COLOR={P_COLOR} isLandscape={true} />}
             <ModeSelector mode={mode} onReset={resetGame} />
           </div>
-          <div style={{flex:1, position:'relative', display:'flex', alignItems:'center', justifyContent:'center', padding:24, boxSizing:'border-box'}}>
-            {svgBoard}{gameOverOverlay}
+          <div style={{flex:1, minHeight:0, display:'flex', alignItems:'center', justifyContent:'center', padding:24, boxSizing:'border-box'}}>
+            {svgBoard}
           </div>
         </div>
         <IntroText>{jmspCaption}</IntroText>
-        <SetDone done={gameOver} />
+        <SetDone celebrate={false} done={gameOver} />
         {rulesOpen && <Ch4RulesModal title="How to play 鸡毛蒜皮" onClose={() => setRulesOpen(false)}>{jmspRules}</Ch4RulesModal>}
       </>
     )
   }
   return (
     <>
-      <div style={{...ch4CanvasStyle, flex:1, display:'flex', flexDirection:'column', overflow:'hidden'}}>
-        <div style={{display:'flex', alignItems:'center', justifyContent:'center', padding:'14px 16px', flexShrink:0}}>
-          <TurnIndicator current={current} gameOver={gameOver} mode={mode} P_COLOR={P_COLOR} isLandscape={false} />
+      <div style={{...ch4CanvasStyle, flex:1, display:'flex', flexDirection:'column', overflow:'hidden', justifyContent:'center'}}>
+          <Ch4PlayAgainBtn show={gameOver} onClick={resetGame} />
+        <div style={{display:'flex', alignItems:'center', justifyContent:'center', padding:'0 16px', height:60, flexShrink:0}}>
+          {gameOver ? gameOverBanner : <TurnIndicator current={current} gameOver={gameOver} mode={mode} P_COLOR={P_COLOR} isLandscape={false} />}
         </div>
-        <div style={{flex:1, position:'relative', display:'flex', alignItems:'center', justifyContent:'center', padding:20, boxSizing:'border-box'}}>
-          {svgBoard}{gameOverOverlay}
+        <div style={{display:'flex', alignItems:'center', justifyContent:'center', padding:20, boxSizing:'border-box'}}>
+          {svgBoard}
         </div>
-        <div style={{display:'flex', alignItems:'center', justifyContent:'center', padding:'12px 16px', flexShrink:0}}>
+        <div style={{display:'flex', alignItems:'center', justifyContent:'center', padding:'0 16px', height:48, flexShrink:0}}>
           <ModeSelector mode={mode} onReset={resetGame} />
         </div>
       </div>
       <IntroText>{jmspCaption}</IntroText>
-      <SetDone done={gameOver} />
+      <SetDone celebrate={false} done={gameOver} />
       {rulesOpen && <Ch4RulesModal title="How to play 鸡毛蒜皮" onClose={() => setRulesOpen(false)}>{jmspRules}</Ch4RulesModal>}
     </>
   )
@@ -5630,6 +5842,8 @@ function CatMousePage() {
   const [dragFrom,      setDragFrom]      = useState<number|null>(null)
   const [dragPt,        setDragPt]        = useState<{x:number;y:number}|null>(null)
   const svgRef = useRef<SVGSVGElement>(null)
+  // Ref mirrors dragFrom for pointer handlers — avoids stale-closure race on touch
+  const dragFromRef = useRef<number|null>(null)
 
   const CAT_COLOR   = RED
   const MOUSE_COLOR = BLUE
@@ -5639,6 +5853,7 @@ function CatMousePage() {
     setMode(m); setComputerIsCat(newComputerIsCat)
     setCatPos(0); setMousePos(5)
     setTurn('mouse'); setGameOver(false)
+    dragFromRef.current = null
     setDragFrom(null); setDragPt(null)
   }
 
@@ -5651,13 +5866,13 @@ function CatMousePage() {
       if (computerIsCat) {
         const next = cmBestCatMove(catPos, mousePos)
         setCatPos(next)
-        if (next === mousePos) setGameOver(true)
-        else setTurn('mouse')
+        if (next === mousePos) { setGameOver(true); playSound('lose') }
+        else { playSound('turn'); setTurn('mouse') }
       } else {
         const next = cmBestMouseMove(catPos, mousePos)
         setMousePos(next)
-        if (next === catPos) { setGameOver(true); return }
-        setTurn('cat')
+        if (next === catPos) { setGameOver(true); playSound('lose'); return }
+        playSound('turn'); setTurn('cat')
       }
     }, 500)
     return () => clearTimeout(t)
@@ -5665,15 +5880,29 @@ function CatMousePage() {
 
   function doMove(to: number) {
     if (gameOver) return
+    sfxUnlock()
     const myPos = turn === 'mouse' ? mousePos : catPos
     if (!CM_ADJ[myPos].includes(to)) return
     if (turn === 'mouse') {
       setMousePos(to)
-      if (to === catPos) { setGameOver(true); return }
+      if (to === catPos) {
+        setGameOver(true)
+        // Mouse ran into cat — cat wins
+        const catWins = true
+        playSound(mode === 'computer' ? (computerIsCat ? 'lose' : 'win') : 'win')
+        return
+      }
+      playSound('turn')
       setTurn('cat')
     } else {
       setCatPos(to)
-      if (to === mousePos) { setGameOver(true); return }
+      if (to === mousePos) {
+        setGameOver(true)
+        // Cat caught mouse — cat wins
+        playSound(mode === 'computer' ? (computerIsCat ? 'lose' : 'win') : 'win')
+        return
+      }
+      playSound('turn')
       setTurn('mouse')
     }
   }
@@ -5706,21 +5935,22 @@ function CatMousePage() {
     <svg
       ref={svgRef}
       viewBox="0 0 100 100"
-      style={{ width: '100%', height: '100%', touchAction: 'none', overflow: 'visible' }}
+      style={{ width: '100%', aspectRatio: '1 / 1', maxHeight: '100%', touchAction: 'none', overflow: 'visible' }}
       onPointerMove={e => {
-        if (dragFrom === null) return
+        if (dragFromRef.current === null) return
         const pt = toSVGPt(e); if (pt) setDragPt({ x: pt.x, y: pt.y })
       }}
       onPointerUp={e => {
-        if (dragFrom === null) return
+        if (dragFromRef.current === null) return
         const pt = toSVGPt(e)
         if (pt && isHumanTurn) {
           const target = nearestValid(pt, validMoves)
           if (target !== null) doMove(target)
         }
+        dragFromRef.current = null
         setDragFrom(null); setDragPt(null)
       }}
-      onPointerLeave={() => { setDragFrom(null); setDragPt(null) }}
+      onPointerCancel={() => { dragFromRef.current = null; setDragFrom(null); setDragPt(null) }}
     >
       {/* Edges */}
       {CM_EDGES.map(([a, b], i) => (
@@ -5755,47 +5985,37 @@ function CatMousePage() {
 
       {/* Pieces: mouse first so cat renders on top */}
       {[
-        { id: 'mouse', pos: mousePos, isX: true,  color: MOUSE_COLOR },
-        { id: 'cat',   pos: catPos,   isX: false, color: CAT_COLOR   },
-      ].map(({ id, pos, isX, color }) => {
+        { id: 'mouse', pos: mousePos, color: MOUSE_COLOR },
+        { id: 'cat',   pos: catPos,   color: CAT_COLOR   },
+      ].map(({ id, pos, color }) => {
         const isDragging = dragFrom === pos
         const n = isDragging && dragPt ? dragPt : CM_NODES[pos]
         const canDrag = isHumanTurn && id === activePiece
-        // Scale Lucide 24×24 path into NR+1=6 radius: scale = (NR*2*0.6)/24
-        const s = (NR * 2 * 0.6) / 24
         return (
           <g key={id} transform={`translate(${n.x},${n.y})`}
              style={{ cursor: canDrag ? 'grab' : 'default' }}
              onPointerDown={e => {
                if (!canDrag) return
                e.currentTarget.setPointerCapture(e.pointerId)
+               dragFromRef.current = pos
                setDragFrom(pos)
                const pt = toSVGPt(e); if (pt) setDragPt({ x: pt.x, y: pt.y })
              }}>
-            <circle r={NR + 1} fill={color}
-            />
-            {/* Lucide icon paths scaled & centered (original viewBox 0 0 24 24) */}
-            <g transform={`scale(${s}) translate(-12,-12)`} stroke="#fff" strokeWidth={2.5} strokeLinecap="round" strokeLinejoin="round" fill="none" style={{ pointerEvents: 'none' }}>
-              {isX
-                ? <><path d="M18 6 6 18"/><path d="m6 6 12 12"/></>
-                : <circle cx={12} cy={12} r={10} />
-              }
-            </g>
+            <circle r={NR + 1} fill={color} />
           </g>
         )
       })}
     </svg>
   )
 
-  // ── Game-over overlay ──────────────────────────────────────────────────────
+  // ── Game-over banner ──────────────────────────────────────────────────────
   const cmWinnerLabel = mode === 'computer'
     ? (computerIsCat ? 'I win! 😄' : 'You win! 🎉')
     : 'Cop wins! 🎉'
-  const gameOverOverlay = gameOver ? (
-    <Ch4GameOverOverlay
+  const gameOverBanner = gameOver ? (
+    <Ch4GameOverBanner
       winnerLabel={cmWinnerLabel}
       winnerColor={CAT_COLOR}
-      onPlayAgain={() => resetGame()}
     />
   ) : null
 
@@ -5827,17 +6047,17 @@ function CatMousePage() {
     return (
       <>
         <div style={{ ...ch4CanvasStyle, flex: 1, display: 'flex', flexDirection: 'row', overflow: 'hidden' }}>
+          <Ch4PlayAgainBtn show={gameOver} onClick={resetGame} />
           <div style={{ flexShrink: 0, display: 'flex', flexDirection: 'column', alignItems: 'flex-start', justifyContent: 'space-between', padding: '24px 20px' }}>
-            <TurnIndicator current={turn === 'mouse' ? 'X' : 'O'} gameOver={gameOver} mode={mode} P_COLOR={CM_P_COLOR} isLandscape={true} icons={CM_ICONS} labels={CM_LABELS} />
+            {gameOver ? gameOverBanner : <TurnIndicator current={turn === 'mouse' ? 'X' : 'O'} gameOver={gameOver} mode={mode} P_COLOR={CM_P_COLOR} isLandscape={true} icons={CM_ICONS} labels={CM_LABELS} />}
             {modeSelector}
           </div>
-          <div style={{ flex: 1, position: 'relative', display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 24, boxSizing: 'border-box' }}>
+          <div style={{ flex: 1, minHeight: 0, display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 24, boxSizing: 'border-box' }}>
             {svgBoard}
-            {gameOverOverlay}
           </div>
         </div>
         <IntroText>{cmCaption}</IntroText>
-        <SetDone done={gameOver} />
+        <SetDone celebrate={false} done={gameOver} />
         {rulesOpen && <Ch4RulesModal title="How to play Cops vs Robbers" onClose={() => setRulesOpen(false)}>{cmRules}</Ch4RulesModal>}
       </>
     )
@@ -5845,26 +6065,827 @@ function CatMousePage() {
 
   return (
     <>
-      <div style={{ ...ch4CanvasStyle, flex: 1, display: 'flex', flexDirection: 'column', overflow: 'hidden' }}>
-        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', padding: '14px 16px', flexShrink: 0 }}>
-          <TurnIndicator current={turn === 'mouse' ? 'X' : 'O'} gameOver={gameOver} mode={mode} P_COLOR={CM_P_COLOR} isLandscape={false} icons={CM_ICONS} labels={CM_LABELS} />
+      <div style={{ ...ch4CanvasStyle, flex: 1, display: 'flex', flexDirection: 'column', overflow: 'hidden', justifyContent: 'center' }}>
+          <Ch4PlayAgainBtn show={gameOver} onClick={resetGame} />
+        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', padding: '0 16px', height: 60, flexShrink: 0 }}>
+          {gameOver ? gameOverBanner : <TurnIndicator current={turn === 'mouse' ? 'X' : 'O'} gameOver={gameOver} mode={mode} P_COLOR={CM_P_COLOR} isLandscape={false} icons={CM_ICONS} labels={CM_LABELS} />}
         </div>
-        <div style={{ flex: 1, position: 'relative', display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 20, boxSizing: 'border-box' }}>
+        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 20, boxSizing: 'border-box' }}>
           {svgBoard}
-          {gameOverOverlay}
         </div>
-        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', padding: '12px 16px', flexShrink: 0 }}>
+        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', padding: '0 16px', height: 48, flexShrink: 0 }}>
           {modeSelector}
         </div>
       </div>
       <IntroText>{cmCaption}</IntroText>
-      <SetDone done={gameOver} />
+      <SetDone celebrate={false} done={gameOver} />
       {rulesOpen && <Ch4RulesModal title="How to play Cops vs Robbers" onClose={() => setRulesOpen(false)}>{cmRules}</Ch4RulesModal>}
     </>
   )
 }
 
 const CHAPTER4_PAGES: React.ComponentType[] = [TicTacToePage, DotsAndBoxesPage, DotTrianglesPage, CatMousePage, JmspPage]
+
+// ─── Chapter 5 ───────────────────────────────────────────────────────────────
+
+// Shared layout constants
+const CS_CELL  = 48   // SVG units per cell
+const CS_PAD   = 20   // viewBox padding
+const CS_DOT_R = 15   // dot radius in p3 (6×6) viewBox units
+const CS_VB6   = 2 * CS_PAD + 6 * CS_CELL  // p3 viewBox size (328) — dot-size reference
+
+// Color palettes
+const CS4_COLORS = [BLUE, RED, YELLOW, '#50C878']                            // 4 colors (pages 1 & 2)
+const CS6_COLORS = [BLUE, RED, YELLOW, '#50C878', '#AF7AC5', '#FF8C42']      // 6 colors (page 3)
+
+// ── Page 1: Two independent 2×2 boxes, each missing 1 dot ────────────────────
+// Colors: CS4_COLORS = [BLUE(0), RED(1), YELLOW(2), GREEN(3)]
+// Box A: blue(0,0), [empty→RED](0,1), YELLOW(1,0), GREEN(1,1)
+// Box B: blue(0,0), RED(0,1), [empty→YELLOW](1,0), GREEN(1,1)
+const CS1_GIVEN_A: (number | null)[][] = [[0, null], [2, 3]]
+const CS1_GIVEN_B: (number | null)[][] = [[0, 1],    [null, 3]]
+const CS1_BOX_GAP = 16                                      // gap between the two 2×2 boxes (SVG units)
+const CS1_BOX_VB  = 2 * CS_CELL + 2 * CS_PAD               // compact viewBox per box: 136 SVG units
+
+// ── Page 2: 4×4 board, 4 colors ───────────────────────────────────────────────
+// Solution: every row, col, and 2×2 box has each of 0-3 exactly once.
+const CS4_SOL: number[][] = [
+  [0, 1, 2, 3],
+  [2, 3, 0, 1],
+  [1, 0, 3, 2],
+  [3, 2, 1, 0],
+]
+const CS4_PUZZLE: (number | null)[][] = [
+  [0,    null, 2,    null],
+  [null, 3,    null, 1   ],
+  [1,    null, 3,    null],
+  [null, 2,    null, 0   ],
+]
+
+// ── Page 3: 6×6 board, 6 colors ───────────────────────────────────────────────
+// Solution: every row, col, and 2×3 box has each of 0-5 exactly once.
+const CS6_SOL: number[][] = [
+  [0, 1, 2, 3, 4, 5],
+  [3, 4, 5, 0, 1, 2],
+  [1, 0, 3, 2, 5, 4],
+  [2, 5, 4, 1, 0, 3],
+  [4, 2, 0, 5, 3, 1],
+  [5, 3, 1, 4, 2, 0],
+]
+const CS6_PUZZLE: (number | null)[][] = [
+  [0,    null, 2,    null, null, 5   ],
+  [null, 4,    5,    0,    null, null],
+  [1,    null, 3,    null, null, 4   ],
+  [null, 5,    null, null, 0,    3   ],
+  [4,    null, null, 5,    null, 1   ],
+  [5,    3,    null, null, 2,    0   ],
+]
+
+interface CSCfg {
+  size: number
+  colors: string[]
+  boxH: number          // rows per box region
+  boxW: number          // cols per box region
+  solution: number[][]
+  puzzle: (number | null)[][]
+  caption: React.ReactNode
+  trayOrder?: number[]  // display order indices for tray; defaults to [0,1,...,n-1]
+}
+
+/** True if board[r][c] duplicates a peer in its row, column, or box. */
+function csConflict(board: (number | null)[][], r: number, c: number,
+                    size: number, boxH: number, boxW: number): boolean {
+  const v = board[r][c]
+  if (v === null) return false
+  for (let i = 0; i < size; i++) {
+    if (i !== c && board[r][i] === v) return true
+    if (i !== r && board[i][c] === v) return true
+  }
+  const br = Math.floor(r / boxH) * boxH
+  const bc = Math.floor(c / boxW) * boxW
+  for (let dr = 0; dr < boxH; dr++)
+    for (let dc = 0; dc < boxW; dc++) {
+      const rr = br + dr, cc = bc + dc
+      if ((rr !== r || cc !== c) && board[rr][cc] === v) return true
+    }
+  return false
+}
+
+function ColorSudokuPage({ cfg }: { cfg: CSCfg }) {
+  const isLandscape = useIsLandscape()
+
+  const { size, colors, boxH, boxW, solution, puzzle, caption, trayOrder } = cfg
+  // All pages use the same CS_VB6 viewBox so grid cells are identical in physical size to p3
+  const vb = CS_VB6
+  const gridPad = Math.round((CS_VB6 - size * CS_CELL) / 2)   // centers the grid inside the fixed viewBox
+  const dotR = CS_DOT_R   // constant — same physical dot size on all pages
+
+  const [board, setBoard] = useState<(number | null)[][]>(() => puzzle.map(row => [...row]))
+  const resetBoard = () => setBoard(puzzle.map(row => [...row]))
+
+  // Drag-from-palette state
+  const [dragColorIdx, setDragColorIdx] = useState<number | null>(null)
+  const [dragPt,       setDragPt]       = useState<{ x: number; y: number } | null>(null)
+  const [hoverCell,    setHoverCell]    = useState<{ r: number; c: number } | null>(null)
+  // errorFlash: position + unique id so re-dropping always re-triggers the animation
+  const [errorFlash,   setErrorFlash]   = useState<{ x: number; y: number; id: number } | null>(null)
+  // flyDot: dot flying from palette to board cell on valid drop
+  const [flyDot, setFlyDot] = useState<{
+    colorIdx: number; id: number;
+    fromX: number; fromY: number; toX: number; toY: number;
+    cell: { r: number; c: number };
+  } | null>(null)
+  // lastPlaced: the most recently user-placed cell (gets the ✕ when conflicting)
+  const [lastPlaced, setLastPlaced] = useState<{ r: number; c: number } | null>(null)
+  const svgRef     = useRef<SVGSVGElement>(null)
+  // boardSqRef: the square <div> that wraps the SVG — used to measure rendered px size
+  const boardSqRef = useRef<HTMLDivElement>(null)
+  const [boardPx, setBoardPx] = useState(0)
+
+  useEffect(() => {
+    const el = boardSqRef.current
+    if (!el) return
+    const ro = new ResizeObserver(([entry]) => {
+      const { width, height } = entry.contentRect
+      setBoardPx(Math.min(width, height))
+    })
+    ro.observe(el)
+    return () => ro.disconnect()
+  }, [])
+
+  // Caption is set via IntroText (rendered in JSX) so it respects PageActiveCtx.
+
+  const isFixed = (r: number, c: number) => puzzle[r][c] !== null
+
+  // misplacedConflict: true when the last-placed dot is still in conflict
+  const misplacedConflict = lastPlaced !== null &&
+    board[lastPlaced.r]?.[lastPlaced.c] !== null &&
+    csConflict(board, lastPlaced.r, lastPlaced.c, size, boxH, boxW)
+
+  // Screen position of the misplaced cell for the HTML X overlay
+  const misplacedScreenPos: { x: number; y: number } | null = (() => {
+    if (!misplacedConflict || !boardSqRef.current || boardPx === 0) return null
+    const rect = boardSqRef.current.getBoundingClientRect()
+    const scale = boardPx / CS_VB6
+    return {
+      x: rect.left + (gridPad + lastPlaced!.c * CS_CELL + CS_CELL / 2) * scale,
+      y: rect.top  + (gridPad + lastPlaced!.r * CS_CELL + CS_CELL / 2) * scale,
+    }
+  })()
+  const dotR_px = boardPx > 0 ? CS_DOT_R * boardPx / CS_VB6 : 20
+
+  // Remaining count: how many of each color still need to be placed.
+  // In an N×N sudoku with N colors each appears N times; for a 2×2 single-box
+  // with 4 colors each appears once.  Formula: size²/colors.length per color.
+  const totalPerColor = Math.round((size * size) / colors.length)
+  const remaining = colors.map((_, i) => totalPerColor - board.flat().filter(v => v === i).length)
+
+  // Convert client coords → SVG viewBox coords
+  function toSvgCoords(cx: number, cy: number): { x: number; y: number } | null {
+    const svg = svgRef.current
+    if (!svg) return null
+    const rect = svg.getBoundingClientRect()
+    if (rect.width === 0 || rect.height === 0) return null
+    return {
+      x: (cx - rect.left) * (vb / rect.width),
+      y: (cy - rect.top)  * (vb / rect.height),
+    }
+  }
+
+  function cellAt(svgX: number, svgY: number): { r: number; c: number } | null {
+    const c = Math.floor((svgX - gridPad) / CS_CELL)
+    const r = Math.floor((svgY - gridPad) / CS_CELL)
+    return (r >= 0 && r < size && c >= 0 && c < size) ? { r, c } : null
+  }
+
+  // Global pointer tracking while a palette dot is being dragged
+  useEffect(() => {
+    if (dragColorIdx === null) return
+    const onMove = (e: PointerEvent) => {
+      setDragPt({ x: e.clientX, y: e.clientY })
+      const sc = toSvgCoords(e.clientX, e.clientY)
+      setHoverCell(sc ? cellAt(sc.x, sc.y) : null)
+    }
+    const onUp = (e: PointerEvent) => {
+      const sc = toSvgCoords(e.clientX, e.clientY)
+      const cell = sc ? cellAt(sc.x, sc.y) : null
+      const valid = cell !== null && !isFixed(cell.r, cell.c) && board[cell.r][cell.c] === null
+      if (valid) {
+        const next = board.map(row => [...row])
+        next[cell!.r][cell!.c] = dragColorIdx
+        setBoard(next)
+        setLastPlaced({ r: cell!.r, c: cell!.c })
+        // Compute cell center in screen coords for fly animation
+        const boardEl = boardSqRef.current
+        if (boardEl) {
+          const boardRect = boardEl.getBoundingClientRect()
+          const cellCx = gridPad + cell!.c * CS_CELL + CS_CELL / 2
+          const cellCy = gridPad + cell!.r * CS_CELL + CS_CELL / 2
+          const toX = boardRect.left + cellCx * (boardRect.width  / vb)
+          const toY = boardRect.top  + cellCy * (boardRect.height / vb)
+          setFlyDot(prev => ({
+            colorIdx: dragColorIdx!, id: (prev?.id ?? 0) + 1,
+            fromX: e.clientX, fromY: e.clientY,
+            toX, toY, cell: cell!,
+          }))
+        }
+      } else {
+        setErrorFlash(prev => ({ x: e.clientX, y: e.clientY, id: (prev?.id ?? 0) + 1 }))
+      }
+      setDragColorIdx(null)
+      setDragPt(null)
+      setHoverCell(null)
+    }
+    window.addEventListener('pointermove', onMove)
+    window.addEventListener('pointerup', onUp)
+    return () => {
+      window.removeEventListener('pointermove', onMove)
+      window.removeEventListener('pointerup', onUp)
+    }
+  }, [dragColorIdx, board]) // eslint-disable-line react-hooks/exhaustive-deps
+
+  const svgBoard = (
+    <svg ref={svgRef} viewBox={`0 0 ${vb} ${vb}`}
+      style={{ width: '100%', aspectRatio: '1 / 1', maxHeight: '100%', display: 'block', touchAction: 'none' }}
+    >
+      {/* Box-border lines (thicker) and inner cell lines (thinner) */}
+      {Array.from({ length: size + 1 }, (_, i) => (
+        <line key={`h${i}`}
+          x1={gridPad} y1={gridPad + i * CS_CELL}
+          x2={gridPad + size * CS_CELL} y2={gridPad + i * CS_CELL}
+          stroke={i % boxH === 0 ? '#ccc' : '#e8e8e8'}
+          strokeWidth={i % boxH === 0 ? 1.5 : 1} />
+      ))}
+      {Array.from({ length: size + 1 }, (_, i) => (
+        <line key={`v${i}`}
+          x1={gridPad + i * CS_CELL} y1={gridPad}
+          x2={gridPad + i * CS_CELL} y2={gridPad + size * CS_CELL}
+          stroke={i % boxW === 0 ? '#ccc' : '#e8e8e8'}
+          strokeWidth={i % boxW === 0 ? 1.5 : 1} />
+      ))}
+
+      {/* Cells */}
+      {Array.from({ length: size }, (_, r) =>
+        Array.from({ length: size }, (_, c) => {
+          const cx       = gridPad + c * CS_CELL + CS_CELL / 2
+          const cy       = gridPad + r * CS_CELL + CS_CELL / 2
+          const val      = board[r][c]
+          const fixed    = isFixed(r, c)
+          const isMisplacedHere = misplacedConflict && lastPlaced?.r === r && lastPlaced?.c === c
+          const isHover  = hoverCell?.r === r && hoverCell?.c === c && !fixed && val === null
+          // Hide board dot while it's flying in
+          const isFlying = flyDot?.cell.r === r && flyDot?.cell.c === c
+          return (
+            <g key={`${r}${c}`} style={{ cursor: fixed ? 'default' : 'crosshair' }}>
+              {isHover && (
+                <rect x={gridPad + c * CS_CELL + 2} y={gridPad + r * CS_CELL + 2}
+                  width={CS_CELL - 4} height={CS_CELL - 4}
+                  fill={`${colors[dragColorIdx!]}30`} rx={5} />
+              )}
+              {val !== null && !isFlying ? (
+                <circle cx={cx} cy={cy} r={dotR} fill={colors[val]}
+                  style={{ filter: isMisplacedHere ? 'drop-shadow(0 0 6px rgba(255,80,130,0.95))' : 'none' }} />
+              ) : isHover ? (
+                <circle cx={cx} cy={cy} r={dotR} fill={colors[dragColorIdx!]} opacity={0.45} />
+              ) : null}
+            </g>
+          )
+        })
+      )}
+    </svg>
+  )
+
+  // PD: drag-visual diameter (ghost, fly, error flash) — board-matched scale
+  const PD = boardPx > 0 ? Math.max(20, Math.round(2 * CS_DOT_R * boardPx / CS_VB6)) : 44
+
+  // Tray sizing constants
+  const trayPad = 14
+  const trayGap = 12
+  const trayMargin = 10
+  const TRAY_PD = PD  // matches board dot diameter exactly
+  const trayFontSize = Math.round(TRAY_PD * 0.40)
+
+  // Ghost dot that follows the pointer while dragging
+  const ghostDot = dragColorIdx !== null && dragPt && (
+    <div style={{
+      position: 'fixed',
+      left: dragPt.x - TRAY_PD / 2,
+      top:  dragPt.y - TRAY_PD / 2,
+      width: TRAY_PD, height: TRAY_PD, borderRadius: '50%',
+      background: colors[dragColorIdx],
+      pointerEvents: 'none',
+      opacity: 0.85,
+      border: '2px solid rgba(255,255,255,0.75)',
+      boxShadow: '0 2px 8px rgba(0,0,0,0.22)',
+      zIndex: 9999,
+    }} />
+  )
+
+  // Error flash: a red dot that pops and fades at the invalid drop location
+  const errorFlashEl = errorFlash && (
+    <div key={errorFlash.id} style={{
+      position: 'fixed',
+      left: errorFlash.x - TRAY_PD / 2,
+      top:  errorFlash.y - TRAY_PD / 2,
+      width: TRAY_PD, height: TRAY_PD, borderRadius: '50%',
+      pointerEvents: 'none',
+      zIndex: 9999,
+      background: '#e53935',
+      border: '2px solid rgba(255,255,255,0.75)',
+      animation: 'csErrorPop 0.45s ease-out forwards',
+    }} />
+  )
+
+  // Fly dot: animates from palette drop point to board cell center on valid placement
+  const flyDeltaX = flyDot ? flyDot.toX - flyDot.fromX : 0
+  const flyDeltaY = flyDot ? flyDot.toY - flyDot.fromY : 0
+  const flyDotEl = flyDot && (
+    <>
+      <style>{`@keyframes csFly_${flyDot.id} {
+        0%   { transform: translate(0,0); }
+        100% { transform: translate(${flyDeltaX}px,${flyDeltaY}px); }
+      }`}</style>
+      <div key={flyDot.id} style={{
+        position: 'fixed',
+        left: flyDot.fromX - TRAY_PD / 2, top: flyDot.fromY - TRAY_PD / 2,
+        width: TRAY_PD, height: TRAY_PD, borderRadius: '50%',
+        background: colors[flyDot.colorIdx],
+        border: '2px solid rgba(255,255,255,0.75)',
+        animation: `csFly_${flyDot.id} 0.28s ease-out forwards`,
+        pointerEvents: 'none', zIndex: 9998,
+      }} onAnimationEnd={() => setFlyDot(null)} />
+    </>
+  )
+
+  // Tray panel: fixed slots for every color (filled circle if remaining > 0, solid outline if 0)
+  const trayDot = (color: string, colorIdx: number) => {
+    const count = remaining[colorIdx]
+    const isEmpty = count <= 0
+    return (
+      <div key={colorIdx}
+        style={{
+          position: 'relative', flexShrink: 0,
+          touchAction: 'none',
+          cursor: isEmpty ? 'default' : 'grab',
+          width: TRAY_PD, height: TRAY_PD, borderRadius: '50%',
+          background: isEmpty ? 'transparent' : color,
+          border: isEmpty ? `2px solid ${color}` : 'none',
+          opacity: dragColorIdx === colorIdx ? 0.35 : 1,
+          transition: 'opacity 0.12s',
+          display: 'flex', alignItems: 'center', justifyContent: 'center',
+          pointerEvents: isEmpty ? 'none' : undefined,
+        }}
+        onPointerDown={isEmpty ? undefined : e => {
+          e.preventDefault()
+          setDragColorIdx(colorIdx)
+          setDragPt({ x: e.clientX, y: e.clientY })
+        }}
+      >
+        {!isEmpty && (
+          <span style={{
+            fontSize: trayFontSize, fontWeight: 900, color: '#fff',
+            lineHeight: 1, pointerEvents: 'none', userSelect: 'none',
+            textShadow: '0 1px 2px rgba(0,0,0,0.2)',
+          }}>{count}</span>
+        )}
+      </div>
+    )
+  }
+
+  const palettePanel = (axis: 'column' | 'row') => {
+    const isCol = axis === 'column'
+    const trayStyle: React.CSSProperties = {
+      background: '#fef9f0', flexShrink: 0, padding: trayPad,
+      display: 'flex', alignItems: 'center', justifyContent: 'center',
+      margin: trayMargin, borderRadius: 16,
+      ...(isCol ? { alignSelf: 'stretch' } : {}),
+    }
+    const order = trayOrder ?? colors.map((_, i) => i)
+    return (
+      <div style={{ ...trayStyle, flexDirection: axis, gap: trayGap }}>
+        {order.map(colorIdx => trayDot(colors[colorIdx], colorIdx))}
+      </div>
+    )
+  }
+
+  // LucideX overlay: tappable X on the misplaced dot, rendered as fixed HTML so it's pixel-perfect
+  const misplacedXOverlay = misplacedConflict && misplacedScreenPos && !flyDot && (
+    <div
+      style={{
+        position: 'fixed',
+        left: misplacedScreenPos.x - dotR_px,
+        top:  misplacedScreenPos.y - dotR_px,
+        width: dotR_px * 2, height: dotR_px * 2,
+        display: 'flex', alignItems: 'center', justifyContent: 'center',
+        pointerEvents: 'auto', cursor: 'pointer',
+        zIndex: 9990,
+      }}
+      onClick={() => {
+        const next = board.map(row => [...row])
+        next[lastPlaced!.r][lastPlaced!.c] = null
+        setBoard(next)
+        setLastPlaced(null)
+      }}
+    >
+      <LucideX size={Math.round(dotR_px * 1.1)} strokeWidth={2.5} color="rgba(255,255,255,0.85)" />
+    </div>
+  )
+
+  const fixedOverlays = (
+    <>
+      <style>{`@keyframes csErrorPop {
+        0%   { opacity: .9; transform: scale(1.1); }
+        60%  { opacity: .7; transform: scale(0.85); }
+        100% { opacity: 0;  transform: scale(0.5); }
+      }`}</style>
+      {ghostDot}
+      {errorFlashEl}
+      {flyDotEl}
+      {misplacedXOverlay}
+    </>
+  )
+
+  // Win detection (SetDone renders null but sets the app-level done flag)
+  const isSolved = board.every((row, r) => row.every((v, c) => v === solution[r][c]))
+
+  if (isLandscape) {
+    return (
+      <>
+        <div style={{ ...ch4CanvasStyle, flex: 1, display: 'flex', flexDirection: 'row', overflow: 'hidden' }}>
+          <Ch4PlayAgainBtn show={true} onClick={resetBoard} />
+          <div style={{ flex: 1, minWidth: 0, minHeight: 0, display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+            <div ref={boardSqRef} style={{ height: '100%', aspectRatio: '1 / 1', maxWidth: '100%' }}>
+              {svgBoard}
+            </div>
+          </div>
+          {palettePanel('column')}
+        </div>
+        <IntroText>{caption}</IntroText>
+        {fixedOverlays}
+        <SetDone done={isSolved} />
+      </>
+    )
+  }
+
+  return (
+    <>
+      <div style={{ ...ch4CanvasStyle, flex: 1, display: 'flex', flexDirection: 'column', overflow: 'hidden', justifyContent: 'center' }}>
+        <Ch4PlayAgainBtn show={true} onClick={resetBoard} />
+        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+          <div ref={boardSqRef} style={{ width: '100%', aspectRatio: '1 / 1' }}>
+            {svgBoard}
+          </div>
+        </div>
+        {palettePanel('row')}
+      </div>
+      <IntroText>{caption}</IntroText>
+      {fixedOverlays}
+      <SetDone done={isSolved} />
+    </>
+  )
+}
+
+// ── Per-difficulty wrappers ───────────────────────────────────────────────────
+
+const CS4_CFG: CSCfg = {
+  size: 4, colors: CS4_COLORS, boxH: 2, boxW: 2,
+  solution: CS4_SOL, puzzle: CS4_PUZZLE,
+  trayOrder: [1, 2, 3, 0],   // RED, YELLOW, GREEN, BLUE
+  caption: <><b>Color Sudoku:</b> Fill the 4×4 grid so each row, column &amp; 2×2 box has all 4 colors!</>,
+}
+const CS6_CFG: CSCfg = {
+  size: 6, colors: CS6_COLORS, boxH: 2, boxW: 3,
+  solution: CS6_SOL, puzzle: CS6_PUZZLE,
+  trayOrder: [1, 2, 3, 0, 4, 5],   // RED, YELLOW, GREEN, BLUE, PURPLE, ORANGE
+  caption: <><b>Color Sudoku:</b> Fill the 6×6 grid so each row, column &amp; 2×3 box has all 6 colors!</>,
+}
+
+// ── CS1Page: two independent 2×2 boxes, drag-to-fill with shared tray ─────────
+function CS1Page() {
+  const isLandscape = useIsLandscape()
+  const colors = CS4_COLORS
+  // Display tray in order: RED(1), YELLOW(2), GREEN(3), BLUE(0)
+  const trayOrder = [1, 2, 3, 0]
+
+  const [boardA, setBoardA] = useState<(number | null)[][]>(() => CS1_GIVEN_A.map(r => [...r]))
+  const [boardB, setBoardB] = useState<(number | null)[][]>(() => CS1_GIVEN_B.map(r => [...r]))
+
+  const resetBoards = () => {
+    setBoardA(CS1_GIVEN_A.map(r => [...r]))
+    setBoardB(CS1_GIVEN_B.map(r => [...r]))
+  }
+
+  // Drag-from-palette state
+  const [dragColorIdx, setDragColorIdx] = useState<number | null>(null)
+  const [dragPt,       setDragPt]       = useState<{ x: number; y: number } | null>(null)
+  const [hoverCell,    setHoverCell]    = useState<{ box: 'A' | 'B'; r: number; c: number } | null>(null)
+  const [errorFlash,   setErrorFlash]   = useState<{ x: number; y: number; id: number } | null>(null)
+  const [flyDot,       setFlyDot]       = useState<{
+    colorIdx: number; id: number;
+    fromX: number; fromY: number; toX: number; toY: number;
+    box: 'A' | 'B'; r: number; c: number;
+  } | null>(null)
+
+  const svgRef      = useRef<SVGSVGElement>(null)
+  const boardDivRef = useRef<HTMLDivElement>(null)
+  const [boardDivW, setBoardDivW] = useState(0)
+  const [boardDivH, setBoardDivH] = useState(0)
+
+  useEffect(() => {
+    const el = boardDivRef.current; if (!el) return
+    const ro = new ResizeObserver(([e]) => {
+      setBoardDivW(e.contentRect.width)
+      setBoardDivH(e.contentRect.height)
+    })
+    ro.observe(el); return () => ro.disconnect()
+  }, [])
+
+  // SVG viewBox dimensions depend on orientation
+  // Portrait:  CS1_BOX_VB wide × (2*CS1_BOX_VB + CS1_BOX_GAP) tall — boxes stacked vertically
+  // Landscape: (2*CS1_BOX_VB + CS1_BOX_GAP) wide × CS1_BOX_VB tall — boxes side by side
+  const VW = isLandscape ? (2 * CS1_BOX_VB + CS1_BOX_GAP) : CS1_BOX_VB
+  const VH = isLandscape ? CS1_BOX_VB : (2 * CS1_BOX_VB + CS1_BOX_GAP)
+
+  // Box B offset in SVG coords
+  const B_OX = isLandscape ? CS1_BOX_VB + CS1_BOX_GAP : 0
+  const B_OY = isLandscape ? 0 : CS1_BOX_VB + CS1_BOX_GAP
+
+  // dotR_px: scale using CS1_BOX_VB as the reference dimension
+  // Portrait: boardDivW maps to CS1_BOX_VB; landscape: boardDivH maps to CS1_BOX_VB
+  const boardPx = isLandscape ? boardDivH : boardDivW
+  const dotR_px = boardPx > 0 ? CS_DOT_R * boardPx / CS1_BOX_VB : 20
+  const TRAY_PD = Math.max(20, Math.round(2 * dotR_px))
+  const trayPad = 14; const trayGap = 12; const trayMargin = 10
+  const trayFontSize = Math.round(TRAY_PD * 0.40)
+
+  // Each color appears once per box × 2 boxes = 2 total needed
+  const remaining = colors.map((_, i) =>
+    2 - boardA.flat().filter(v => v === i).length - boardB.flat().filter(v => v === i).length
+  )
+  const bothSolved = boardA.flat().every(v => v !== null) && boardB.flat().every(v => v !== null)
+
+  // Convert client coords → SVG viewBox coords
+  function toSvgXY(cx: number, cy: number) {
+    const svg = svgRef.current; if (!svg) return null
+    const rect = svg.getBoundingClientRect()
+    if (!rect.width || !rect.height) return null
+    return { x: (cx - rect.left) * (VW / rect.width), y: (cy - rect.top) * (VH / rect.height) }
+  }
+
+  function hitCell(svgX: number, svgY: number): { box: 'A' | 'B'; r: number; c: number; empty: boolean } | null {
+    const boxes: ['A' | 'B', number, number][] = [['A', 0, 0], ['B', B_OX, B_OY]]
+    for (const [box, ox, oy] of boxes) {
+      const lx = svgX - ox - CS_PAD
+      const ly = svgY - oy - CS_PAD
+      const c = Math.floor(lx / CS_CELL)
+      const r = Math.floor(ly / CS_CELL)
+      if (r >= 0 && r < 2 && c >= 0 && c < 2) {
+        const board = box === 'A' ? boardA : boardB
+        const given = box === 'A' ? CS1_GIVEN_A : CS1_GIVEN_B
+        return { box, r, c, empty: board[r][c] === null && given[r][c] === null }
+      }
+    }
+    return null
+  }
+
+  useEffect(() => {
+    if (dragColorIdx === null) return
+    const onMove = (e: PointerEvent) => {
+      setDragPt({ x: e.clientX, y: e.clientY })
+      const sc = toSvgXY(e.clientX, e.clientY)
+      const hit = sc ? hitCell(sc.x, sc.y) : null
+      setHoverCell(hit?.empty ? { box: hit.box, r: hit.r, c: hit.c } : null)
+    }
+    const onUp = (e: PointerEvent) => {
+      const sc = toSvgXY(e.clientX, e.clientY)
+      const hit = sc ? hitCell(sc.x, sc.y) : null
+      if (hit?.empty) {
+        if (hit.box === 'A') setBoardA(prev => { const n = prev.map(r => [...r]); n[hit.r][hit.c] = dragColorIdx; return n })
+        else                  setBoardB(prev => { const n = prev.map(r => [...r]); n[hit.r][hit.c] = dragColorIdx; return n })
+        const el = boardDivRef.current
+        if (el) {
+          const rect = el.getBoundingClientRect()
+          const ox = hit.box === 'A' ? 0 : B_OX
+          const oy = hit.box === 'A' ? 0 : B_OY
+          const cellCxSvg = ox + CS_PAD + hit.c * CS_CELL + CS_CELL / 2
+          const cellCySvg = oy + CS_PAD + hit.r * CS_CELL + CS_CELL / 2
+          const toX = rect.left + cellCxSvg * (rect.width  / VW)
+          const toY = rect.top  + cellCySvg * (rect.height / VH)
+          setFlyDot(prev => ({
+            colorIdx: dragColorIdx!, id: (prev?.id ?? 0) + 1,
+            fromX: e.clientX, fromY: e.clientY, toX, toY,
+            box: hit.box, r: hit.r, c: hit.c,
+          }))
+        }
+      } else {
+        setErrorFlash(prev => ({ x: e.clientX, y: e.clientY, id: (prev?.id ?? 0) + 1 }))
+      }
+      setDragColorIdx(null); setDragPt(null); setHoverCell(null)
+    }
+    window.addEventListener('pointermove', onMove)
+    window.addEventListener('pointerup', onUp)
+    return () => { window.removeEventListener('pointermove', onMove); window.removeEventListener('pointerup', onUp) }
+  }, [dragColorIdx, boardA, boardB, isLandscape]) // eslint-disable-line react-hooks/exhaustive-deps
+
+  // ── SVG: two 2×2 boxes (portrait = stacked, landscape = side by side) ──────
+  const svgBoard = (
+    <svg ref={svgRef} viewBox={`0 0 ${VW} ${VH}`}
+      style={{ width: '100%', height: '100%', display: 'block', touchAction: 'none' }}
+    >
+      {(['A', 'B'] as const).map(box => {
+        const ox = box === 'A' ? 0 : B_OX
+        const oy = box === 'A' ? 0 : B_OY
+        const board = box === 'A' ? boardA : boardB
+        const given = box === 'A' ? CS1_GIVEN_A : CS1_GIVEN_B
+        const gx = ox + CS_PAD   // grid origin x
+        const gy = oy + CS_PAD   // grid origin y
+        const sz = 2 * CS_CELL
+        return (
+          <g key={box}>
+            {/* Grid lines */}
+            {[0, 1, 2].map(i => (
+              <line key={`h${i}`} x1={gx} y1={gy + i * CS_CELL}
+                x2={gx + sz} y2={gy + i * CS_CELL}
+                stroke="#ccc" strokeWidth={1.5} />
+            ))}
+            {[0, 1, 2].map(i => (
+              <line key={`v${i}`} x1={gx + i * CS_CELL} y1={gy}
+                x2={gx + i * CS_CELL} y2={gy + sz}
+                stroke="#ccc" strokeWidth={1.5} />
+            ))}
+            {/* Dots */}
+            {Array.from({ length: 2 }, (_, r) =>
+              Array.from({ length: 2 }, (_, c) => {
+                const cx = gx + c * CS_CELL + CS_CELL / 2
+                const cy = gy + r * CS_CELL + CS_CELL / 2
+                const val = board[r][c]
+                const isHover  = hoverCell?.box === box && hoverCell?.r === r && hoverCell?.c === c
+                const isFlying = flyDot?.box === box && flyDot?.r === r && flyDot?.c === c
+                return (
+                  <g key={`${r}${c}`}>
+                    {isHover && (
+                      <rect x={gx + c * CS_CELL + 2} y={gy + r * CS_CELL + 2}
+                        width={CS_CELL - 4} height={CS_CELL - 4}
+                        fill={`${colors[dragColorIdx!]}30`} rx={5} />
+                    )}
+                    {val !== null && !isFlying ? (
+                      <circle cx={cx} cy={cy} r={CS_DOT_R} fill={colors[val]} />
+                    ) : isHover ? (
+                      <circle cx={cx} cy={cy} r={CS_DOT_R} fill={colors[dragColorIdx!]} opacity={0.45} />
+                    ) : given[r][c] === null && val === null ? (
+                      // Empty slot: no ghost dot — leave blank
+                      null
+                    ) : null}
+                  </g>
+                )
+              })
+            )}
+          </g>
+        )
+      })}
+    </svg>
+  )
+
+  // ── Ghost / error-flash / fly-dot visuals ───────────────────────────────────
+  const ghostDot = dragColorIdx !== null && dragPt && (
+    <div style={{
+      position: 'fixed', left: dragPt.x - TRAY_PD/2, top: dragPt.y - TRAY_PD/2,
+      width: TRAY_PD, height: TRAY_PD, borderRadius: '50%',
+      background: colors[dragColorIdx], pointerEvents: 'none', opacity: 0.85,
+      border: '2px solid rgba(255,255,255,0.75)', zIndex: 9999,
+    }} />
+  )
+  const errorFlashEl = errorFlash && (
+    <div key={errorFlash.id} style={{
+      position: 'fixed', left: errorFlash.x - TRAY_PD/2, top: errorFlash.y - TRAY_PD/2,
+      width: TRAY_PD, height: TRAY_PD, borderRadius: '50%',
+      pointerEvents: 'none', zIndex: 9999,
+      background: '#e53935', border: '2px solid rgba(255,255,255,0.75)',
+      animation: 'csErrorPop 0.45s ease-out forwards',
+    }} />
+  )
+  const flyDeltaX = flyDot ? flyDot.toX - flyDot.fromX : 0
+  const flyDeltaY = flyDot ? flyDot.toY - flyDot.fromY : 0
+  const flyDotEl = flyDot && (
+    <>
+      <style>{`@keyframes cs1Fly_${flyDot.id} {
+        0%   { transform: translate(0,0); }
+        100% { transform: translate(${flyDeltaX}px,${flyDeltaY}px); }
+      }`}</style>
+      <div key={flyDot.id} style={{
+        position: 'fixed', left: flyDot.fromX - TRAY_PD/2, top: flyDot.fromY - TRAY_PD/2,
+        width: TRAY_PD, height: TRAY_PD, borderRadius: '50%',
+        background: colors[flyDot.colorIdx], border: '2px solid rgba(255,255,255,0.75)',
+        animation: `cs1Fly_${flyDot.id} 0.28s ease-out forwards`,
+        pointerEvents: 'none', zIndex: 9998,
+      }} onAnimationEnd={() => setFlyDot(null)} />
+    </>
+  )
+
+  // ── Tray panel ──────────────────────────────────────────────────────────────
+  const trayDot = (colorIdx: number) => {
+    const color = colors[colorIdx]
+    const count = remaining[colorIdx]
+    const isEmpty = count <= 0
+    return (
+      <div key={colorIdx}
+        style={{
+          position: 'relative', flexShrink: 0, touchAction: 'none',
+          cursor: isEmpty ? 'default' : 'grab',
+          width: TRAY_PD, height: TRAY_PD, borderRadius: '50%',
+          background: isEmpty ? 'transparent' : color,
+          border: isEmpty ? `2px solid ${color}` : 'none',
+          opacity: dragColorIdx === colorIdx ? 0.35 : 1,
+          transition: 'opacity 0.12s',
+          display: 'flex', alignItems: 'center', justifyContent: 'center',
+          pointerEvents: isEmpty ? 'none' : undefined,
+        }}
+        onPointerDown={isEmpty ? undefined : e => {
+          e.preventDefault(); setDragColorIdx(colorIdx); setDragPt({ x: e.clientX, y: e.clientY })
+        }}
+      >
+        {!isEmpty && (
+          <span style={{
+            fontSize: trayFontSize, fontWeight: 900, color: '#fff',
+            lineHeight: 1, pointerEvents: 'none', userSelect: 'none',
+            textShadow: '0 1px 2px rgba(0,0,0,0.2)',
+          }}>{count}</span>
+        )}
+      </div>
+    )
+  }
+  const palettePanel = (axis: 'column' | 'row') => {
+    const isCol = axis === 'column'
+    const trayStyle: React.CSSProperties = {
+      background: '#fef9f0', flexShrink: 0, padding: trayPad,
+      display: 'flex', alignItems: 'center', justifyContent: 'center',
+      margin: trayMargin, borderRadius: 16,
+      ...(isCol ? { alignSelf: 'stretch' } : {}),
+    }
+    return (
+      <div style={{ ...trayStyle, flexDirection: axis, gap: trayGap }}>
+        {trayOrder.map(colorIdx => trayDot(colorIdx))}
+      </div>
+    )
+  }
+
+  const fixedOverlays = (
+    <>
+      <style>{`@keyframes csErrorPop {
+        0%   { opacity: .9; transform: scale(1.1); }
+        60%  { opacity: .7; transform: scale(0.85); }
+        100% { opacity: 0;  transform: scale(0.5); }
+      }`}</style>
+      {ghostDot}{errorFlashEl}{flyDotEl}
+    </>
+  )
+
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  const caption = useMemo(() => <><b>Each box needs all 4 colors</b> — drag the missing dot into place!</>, [])
+
+  if (isLandscape) {
+    return (
+      <>
+        <div style={{ ...ch4CanvasStyle, flex: 1, display: 'flex', flexDirection: 'row', overflow: 'hidden' }}>
+          <Ch4PlayAgainBtn show={true} onClick={resetBoards} />
+          <div style={{ flex: 1, minWidth: 0, minHeight: 0, display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+            <div ref={boardDivRef}
+              style={{ height: '100%', aspectRatio: `${VW} / ${VH}`, maxWidth: '100%' }}>
+              {svgBoard}
+            </div>
+          </div>
+          {palettePanel('column')}
+        </div>
+        <IntroText>{caption}</IntroText>
+        {fixedOverlays}
+        <SetDone done={bothSolved} />
+      </>
+    )
+  }
+
+  return (
+    <>
+      <div style={{ ...ch4CanvasStyle, flex: 1, display: 'flex', flexDirection: 'column', overflow: 'hidden', justifyContent: 'center' }}>
+        <Ch4PlayAgainBtn show={true} onClick={resetBoards} />
+        <div style={{ flex: 1, minHeight: 0, display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+          <div ref={boardDivRef}
+            style={{ height: '100%', aspectRatio: `${VW} / ${VH}`, maxWidth: '100%' }}>
+            {svgBoard}
+          </div>
+        </div>
+        {palettePanel('row')}
+      </div>
+      <IntroText>{caption}</IntroText>
+      {fixedOverlays}
+      <SetDone done={bothSolved} />
+    </>
+  )
+}
+
+function CS4Page() { return <ColorSudokuPage cfg={CS4_CFG} /> }
+function CS6Page() { return <ColorSudokuPage cfg={CS6_CFG} /> }
+
+const CHAPTER5_PAGES: React.ComponentType[] = [CS1Page, CS4Page, CS6Page]
 
 export default function PressHere() {
   const [page,       setPage]      = useState(0)
@@ -5877,7 +6898,7 @@ export default function PressHere() {
   const [wellDone,   setWellDone]  = useState(false)
   const [chapter,    setChapter]   = useState(() => {
     const m = window.location.pathname.match(/\/ch(\d+)/)
-    const ch = m ? Math.max(1, Math.min(4, parseInt(m[1], 10))) : 1
+    const ch = m ? Math.max(1, Math.min(5, parseInt(m[1], 10))) : 1
     // Immediately redirect /press-here → /press-here/ch1 (or whichever chapter)
     window.history.replaceState(null, '', `/press-here/ch${ch}`)
     return ch
@@ -5901,7 +6922,7 @@ export default function PressHere() {
   const isMobile = vw < 480
   const dotSize  = Math.max(36, Math.min(80, Math.floor(vw * 0.12)))
 
-  const activePages = chapter === 1 ? CHAPTER1_PAGES : chapter === 2 ? CHAPTER2_PAGES : chapter === 3 ? CHAPTER3_PAGES : CHAPTER4_PAGES
+  const activePages = chapter === 1 ? CHAPTER1_PAGES : chapter === 2 ? CHAPTER2_PAGES : chapter === 3 ? CHAPTER3_PAGES : chapter === 4 ? CHAPTER4_PAGES : CHAPTER5_PAGES
   const TOTAL = activePages.length
   const isFirst = page === 0
   const isLast  = page === TOTAL - 1
@@ -5955,10 +6976,20 @@ export default function PressHere() {
     handoffRef.current = { page4Dots: null, page5Dots: null, page6Dots: null, ch2p2Dots: null, ch2LatestDots: null }
   }
 
+  function startChapter5() {
+    setGlobalKey(k => k + 1)
+    setPage(0)
+    setDone(false)
+    setWellDone(false)
+    setChapter(5)
+    handoffRef.current = { page4Dots: null, page5Dots: null, page6Dots: null, ch2p2Dots: null, ch2LatestDots: null }
+  }
+
   function replayChapter() {
     if (chapter === 2) startChapter2()
     else if (chapter === 3) startChapter3()
     else if (chapter === 4) startChapter4()
+    else if (chapter === 5) startChapter5()
     else reset()
   }
 
@@ -5968,8 +6999,8 @@ export default function PressHere() {
     const el = canvasAreaRef.current
     if (!el) return
     el.animate(
-      [{ boxShadow: 'none' }, { boxShadow: '0 20px 56px rgba(0,0,0,0.18)' }, { boxShadow: 'none' }],
-      { duration: 360, easing: 'ease-out' }
+      [{ opacity: '1' }, { opacity: '0.7' }, { opacity: '1' }],
+      { duration: 280, easing: 'ease-out' }
     )
   }, [page])
 
@@ -6003,6 +7034,7 @@ export default function PressHere() {
     document.body.style.overflow = 'hidden'
   }, [])
 
+  if (wellDone && chapter === 5) return <AmazingScreen onReset={startChapter5} />
   if (wellDone && chapter === 4) return <AmazingScreen onReset={startChapter4} />
   if (wellDone && chapter === 3) return <WoohooScreen onReset={startChapter3} onNextChapter={startChapter4} />
   if (wellDone && chapter === 2) return <GreatJob onReset={startChapter2} onNextChapter={startChapter3} />
@@ -6045,10 +7077,10 @@ export default function PressHere() {
               </div>
               {/* Chapter pills + Replay */}
               <div style={{ display: 'flex', gap: isMobile ? 4 : 6, alignItems: 'center' }}>
-                {([1, 2, 3, 4] as const).map(ch => (
+                {([1, 2, 3, 4, 5] as const).map(ch => (
                   <button
                     key={ch}
-                    onClick={() => ch === 1 ? reset() : ch === 2 ? startChapter2() : ch === 3 ? startChapter3() : startChapter4()}
+                    onClick={() => ch === 1 ? reset() : ch === 2 ? startChapter2() : ch === 3 ? startChapter3() : ch === 4 ? startChapter4() : startChapter5()}
                     style={{
                       padding: isMobile ? '3px 8px' : '4px 14px', borderRadius: 20,
                       background: chapter === ch ? '#333' : 'transparent',
@@ -6065,21 +7097,6 @@ export default function PressHere() {
                     {isMobile ? ch : `Ch ${ch}`}
                   </button>
                 ))}
-                <button
-                  onClick={replayChapter}
-                  title="Replay this chapter"
-                  style={{
-                    width: isMobile ? 26 : 30, height: isMobile ? 26 : 30, borderRadius: 20, padding: 0,
-                    background: 'transparent', border: '1.5px solid #ddd',
-                    color: '#bbb', fontFamily: 'inherit', cursor: 'pointer',
-                    display: 'flex', alignItems: 'center', justifyContent: 'center',
-                    transition: 'all 0.15s ease', flexShrink: 0,
-                  }}
-                  onMouseEnter={e => { e.currentTarget.style.borderColor = '#aaa'; e.currentTarget.style.color = '#666' }}
-                  onMouseLeave={e => { e.currentTarget.style.borderColor = '#ddd'; e.currentTarget.style.color = '#bbb' }}
-                >
-                  <RotateCcw size={isMobile ? 11 : 13} strokeWidth={2.5} />
-                </button>
               </div>
             </div>
 
@@ -6101,28 +7118,59 @@ export default function PressHere() {
 
             {/* Caption row — caption left-aligned, Next button pinned to the right */}
             <div style={{ position: 'relative', display: 'flex', alignItems: 'center', justifyContent: 'flex-start', marginTop: isMobile ? 8 : 14, minHeight: isMobile ? 38 : 46 }}>
-              <div style={{ fontSize: 'clamp(13px,2vw,18px)', fontWeight: 600, color: '#444', lineHeight: 1.4, maxWidth: 'calc(100% - 190px)' }}>
+              <div style={{ fontSize: 'clamp(13px,2vw,18px)', fontWeight: 600, color: '#444', lineHeight: 1.4, maxWidth: chapter >= 4 ? 'calc(100% - 90px)' : 'calc(100% - 190px)' }}>
                 {caption}
               </div>
-              <button
-                onClick={isLast ? () => setWellDone(true) : () => nav(page + 1)}
-                style={{
-                  position: 'absolute', right: 0,
-                  display: 'flex', alignItems: 'center', gap: isMobile ? 4 : 8,
-                  padding: isMobile ? '7px 16px' : '10px 28px', borderRadius: 40,
-                  background: '#FDD302', border: 'none',
-                  fontSize: isMobile ? 16 : 20, fontWeight: 800, color: '#333',
-                  fontFamily: 'inherit', cursor: 'pointer',
-                  flexShrink: 0,
-                  visibility: done ? 'visible' : 'hidden',
-                }}
-                onMouseEnter={e => (e.currentTarget.style.background = '#ffc700')}
-                onMouseLeave={e => (e.currentTarget.style.background = '#FDD302')}
-                onMouseDown={e => (e.currentTarget.style.transform = 'scale(0.96)')}
-                onMouseUp={e => (e.currentTarget.style.transform = 'scale(1)')}
-              >
-                {isLast ? 'Done' : <>Next <ChevronRight size={isMobile ? 17 : 22} strokeWidth={3} /></>}
-              </button>
+              {chapter >= 4 ? (
+                <div style={{ position: 'absolute', right: 0, display: 'flex', gap: 6 }}>
+                  <button
+                    onClick={() => nav(page - 1)}
+                    disabled={page === 0}
+                    title="Previous"
+                    style={{
+                      width: isMobile ? 32 : 36, height: isMobile ? 32 : 36, borderRadius: 20, padding: 0,
+                      background: 'transparent', border: `1.5px solid ${page === 0 ? '#eee' : '#ddd'}`,
+                      color: page === 0 ? '#ddd' : '#bbb', cursor: page === 0 ? 'default' : 'pointer',
+                      display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0,
+                    }}
+                  >
+                    <ChevronLeft size={isMobile ? 15 : 17} strokeWidth={2.5} />
+                  </button>
+                  <button
+                    onClick={isLast ? () => setWellDone(true) : () => nav(page + 1)}
+                    disabled={!done}
+                    title={isLast ? 'Done' : 'Next'}
+                    style={{
+                      width: isMobile ? 32 : 36, height: isMobile ? 32 : 36, borderRadius: 20, padding: 0,
+                      background: 'transparent', border: `1.5px solid ${done ? '#ddd' : '#eee'}`,
+                      color: done ? '#bbb' : '#ddd', cursor: done ? 'pointer' : 'default',
+                      display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0,
+                    }}
+                  >
+                    <ChevronRight size={isMobile ? 15 : 17} strokeWidth={2.5} />
+                  </button>
+                </div>
+              ) : (
+                <button
+                  onClick={isLast ? () => setWellDone(true) : () => nav(page + 1)}
+                  style={{
+                    position: 'absolute', right: 0,
+                    display: 'flex', alignItems: 'center', gap: isMobile ? 4 : 8,
+                    padding: isMobile ? '7px 16px' : '10px 28px', borderRadius: 40,
+                    background: '#FDD302', border: 'none',
+                    fontSize: isMobile ? 16 : 20, fontWeight: 800, color: '#333',
+                    fontFamily: 'inherit', cursor: 'pointer',
+                    flexShrink: 0,
+                    visibility: done ? 'visible' : 'hidden',
+                  }}
+                  onMouseEnter={e => (e.currentTarget.style.background = '#ffc700')}
+                  onMouseLeave={e => (e.currentTarget.style.background = '#FDD302')}
+                  onMouseDown={e => (e.currentTarget.style.transform = 'scale(0.96)')}
+                  onMouseUp={e => (e.currentTarget.style.transform = 'scale(1)')}
+                >
+                  {isLast ? 'Done' : <>Next <ChevronRight size={isMobile ? 17 : 22} strokeWidth={3} /></>}
+                </button>
+              )}
             </div>
 
             {/* Footer — dot pagination */}
