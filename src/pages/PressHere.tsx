@@ -3958,14 +3958,15 @@ function Ch4GameOverBanner({ winnerLabel, winnerColor }: {
 }
 
 /** Icon-only "Play again" button — positioned absolute in canvas top-right corner */
-function Ch4PlayAgainBtn({ show, onClick }: { show: boolean; onClick: () => void }) {
+function Ch4PlayAgainBtn({ show, onClick, bottomLeft }: { show: boolean; onClick: () => void; bottomLeft?: boolean }) {
   if (!show) return null
   return (
     <button
       onClick={onClick}
       title="Play again"
       style={{
-        position: 'absolute', top: 8, right: 8, zIndex: 10,
+        position: 'absolute', zIndex: 10,
+        ...(bottomLeft ? { bottom: 8, left: 8 } : { top: 8, right: 8 }),
         width: 30, height: 30, borderRadius: 20, padding: 0,
         background: 'transparent', border: '1.5px solid #ddd',
         color: '#bbb', cursor: 'pointer',
@@ -6512,11 +6513,11 @@ function ColorSudokuPage({ cfg }: { cfg: CSCfg }) {
     return (
       <>
         <div style={{ ...ch4CanvasStyle, flex: 1, display: 'flex', flexDirection: 'row', overflow: 'hidden' }}>
-          <Ch4PlayAgainBtn show={true} onClick={resetBoard} />
-          <div style={{ flex: 1, minWidth: 0, minHeight: 0, display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+          <div style={{ flex: 1, minWidth: 0, minHeight: 0, display: 'flex', alignItems: 'center', justifyContent: 'center', position: 'relative' }}>
             <div ref={boardSqRef} style={{ height: '100%', aspectRatio: '1 / 1', maxWidth: '100%' }}>
               {svgBoard}
             </div>
+            <Ch4PlayAgainBtn show={true} onClick={resetBoard} bottomLeft />
           </div>
           {palettePanel('column')}
         </div>
@@ -6530,11 +6531,11 @@ function ColorSudokuPage({ cfg }: { cfg: CSCfg }) {
   return (
     <>
       <div style={{ ...ch4CanvasStyle, flex: 1, display: 'flex', flexDirection: 'column', overflow: 'hidden', justifyContent: 'center' }}>
-        <Ch4PlayAgainBtn show={true} onClick={resetBoard} />
-        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', position: 'relative' }}>
           <div ref={boardSqRef} style={{ width: '100%', aspectRatio: '1 / 1' }}>
             {svgBoard}
           </div>
+          <Ch4PlayAgainBtn show={true} onClick={resetBoard} bottomLeft />
         </div>
         {palettePanel('row')}
       </div>
@@ -6569,10 +6570,13 @@ function CS1Page() {
 
   const [boardA, setBoardA] = useState<(number | null)[][]>(() => CS1_GIVEN_A.map(r => [...r]))
   const [boardB, setBoardB] = useState<(number | null)[][]>(() => CS1_GIVEN_B.map(r => [...r]))
+  const [lastPlacedA, setLastPlacedA] = useState<{ r: number; c: number } | null>(null)
+  const [lastPlacedB, setLastPlacedB] = useState<{ r: number; c: number } | null>(null)
 
   const resetBoards = () => {
     setBoardA(CS1_GIVEN_A.map(r => [...r]))
     setBoardB(CS1_GIVEN_B.map(r => [...r]))
+    setLastPlacedA(null); setLastPlacedB(null)
   }
 
   // Drag-from-palette state
@@ -6586,16 +6590,28 @@ function CS1Page() {
     box: 'A' | 'B'; r: number; c: number;
   } | null>(null)
 
-  const svgRef      = useRef<SVGSVGElement>(null)
-  const boardDivRef = useRef<HTMLDivElement>(null)
+  const svgRef       = useRef<SVGSVGElement>(null)
+  const boardDivRef  = useRef<HTMLDivElement>(null)
+  const canvasDivRef = useRef<HTMLDivElement>(null)
   const [boardDivW, setBoardDivW] = useState(0)
   const [boardDivH, setBoardDivH] = useState(0)
+  const [canvasW,   setCanvasW]   = useState(0)
+  const [canvasH,   setCanvasH]   = useState(0)
 
   useEffect(() => {
     const el = boardDivRef.current; if (!el) return
     const ro = new ResizeObserver(([e]) => {
       setBoardDivW(e.contentRect.width)
       setBoardDivH(e.contentRect.height)
+    })
+    ro.observe(el); return () => ro.disconnect()
+  }, [])
+
+  useEffect(() => {
+    const el = canvasDivRef.current; if (!el) return
+    const ro = new ResizeObserver(([e]) => {
+      setCanvasW(e.contentRect.width)
+      setCanvasH(e.contentRect.height)
     })
     ro.observe(el); return () => ro.disconnect()
   }, [])
@@ -6610,19 +6626,29 @@ function CS1Page() {
   const B_OX = isLandscape ? CS1_BOX_VB + CS1_BOX_GAP : 0
   const B_OY = isLandscape ? 0 : CS1_BOX_VB + CS1_BOX_GAP
 
-  // dotR_px: scale using CS1_BOX_VB as the reference dimension
-  // Portrait: boardDivW maps to CS1_BOX_VB; landscape: boardDivH maps to CS1_BOX_VB
+  // In portrait the board is width-constrained; in landscape height-constrained
   const boardPx = isLandscape ? boardDivH : boardDivW
-  const dotR_px = boardPx > 0 ? CS_DOT_R * boardPx / CS1_BOX_VB : 20
-  const TRAY_PD = Math.max(20, Math.round(2 * dotR_px))
-  const trayPad = 14; const trayGap = 12; const trayMargin = 10
+  // Canvas reference: same dimension used by ColorSudokuPage's boardSqRef
+  // (canvas fills viewport width in portrait, height in landscape)
+  const canvasRefPx = isLandscape ? canvasH : canvasW
+  // TRAY_PD: same formula as P2/P3 — gives identical dot size across all ch5 pages
+  const TRAY_PD = canvasRefPx > 0
+    ? Math.max(20, Math.round(2 * CS_DOT_R * canvasRefPx / CS_VB6))
+    : 36
+  // cs1DotR: SVG radius so board dot physical size = TRAY_PD
+  // physical_dot = 2 * cs1DotR * (boardPx / CS1_BOX_VB) = TRAY_PD
+  const cs1DotR = (boardPx > 0 && canvasRefPx > 0)
+    ? CS_DOT_R * canvasRefPx * CS1_BOX_VB / (CS_VB6 * boardPx)
+    : CS_DOT_R * CS1_BOX_VB / CS_VB6
+  const trayPad = 10; const trayGap = 10; const trayMargin = 8
   const trayFontSize = Math.round(TRAY_PD * 0.40)
 
   // Each color appears once per box × 2 boxes = 2 total needed
   const remaining = colors.map((_, i) =>
     2 - boardA.flat().filter(v => v === i).length - boardB.flat().filter(v => v === i).length
   )
-  const bothSolved = boardA.flat().every(v => v !== null) && boardB.flat().every(v => v !== null)
+  const boxSolved = (b: (number | null)[][]) => { const v = b.flat().filter(x => x !== null); return v.length === 4 && new Set(v).size === 4 }
+  const bothSolved = boxSolved(boardA) && boxSolved(boardB)
 
   // Convert client coords → SVG viewBox coords
   function toSvgXY(cx: number, cy: number) {
@@ -6660,8 +6686,8 @@ function CS1Page() {
       const sc = toSvgXY(e.clientX, e.clientY)
       const hit = sc ? hitCell(sc.x, sc.y) : null
       if (hit?.empty) {
-        if (hit.box === 'A') setBoardA(prev => { const n = prev.map(r => [...r]); n[hit.r][hit.c] = dragColorIdx; return n })
-        else                  setBoardB(prev => { const n = prev.map(r => [...r]); n[hit.r][hit.c] = dragColorIdx; return n })
+        if (hit.box === 'A') { setBoardA(prev => { const n = prev.map(r => [...r]); n[hit.r][hit.c] = dragColorIdx; return n }); setLastPlacedA({ r: hit.r, c: hit.c }) }
+        else                 { setBoardB(prev => { const n = prev.map(r => [...r]); n[hit.r][hit.c] = dragColorIdx; return n }); setLastPlacedB({ r: hit.r, c: hit.c }) }
         const el = boardDivRef.current
         if (el) {
           const rect = el.getBoundingClientRect()
@@ -6702,44 +6728,50 @@ function CS1Page() {
         const sz = 2 * CS_CELL
         return (
           <g key={box}>
-            {/* Grid lines */}
+            {/* Grid lines — box border (thick) vs inner cell divider (thin), matching P2/P3 */}
             {[0, 1, 2].map(i => (
               <line key={`h${i}`} x1={gx} y1={gy + i * CS_CELL}
                 x2={gx + sz} y2={gy + i * CS_CELL}
-                stroke="#ccc" strokeWidth={1.5} />
+                stroke={i === 1 ? '#e8e8e8' : '#ccc'}
+                strokeWidth={i === 1 ? 1 : 1.5} />
             ))}
             {[0, 1, 2].map(i => (
               <line key={`v${i}`} x1={gx + i * CS_CELL} y1={gy}
                 x2={gx + i * CS_CELL} y2={gy + sz}
-                stroke="#ccc" strokeWidth={1.5} />
+                stroke={i === 1 ? '#e8e8e8' : '#ccc'}
+                strokeWidth={i === 1 ? 1 : 1.5} />
             ))}
             {/* Dots */}
-            {Array.from({ length: 2 }, (_, r) =>
-              Array.from({ length: 2 }, (_, c) => {
-                const cx = gx + c * CS_CELL + CS_CELL / 2
-                const cy = gy + r * CS_CELL + CS_CELL / 2
-                const val = board[r][c]
-                const isHover  = hoverCell?.box === box && hoverCell?.r === r && hoverCell?.c === c
-                const isFlying = flyDot?.box === box && flyDot?.r === r && flyDot?.c === c
-                return (
-                  <g key={`${r}${c}`}>
-                    {isHover && (
-                      <rect x={gx + c * CS_CELL + 2} y={gy + r * CS_CELL + 2}
-                        width={CS_CELL - 4} height={CS_CELL - 4}
-                        fill={`${colors[dragColorIdx!]}30`} rx={5} />
-                    )}
-                    {val !== null && !isFlying ? (
-                      <circle cx={cx} cy={cy} r={CS_DOT_R} fill={colors[val]} />
-                    ) : isHover ? (
-                      <circle cx={cx} cy={cy} r={CS_DOT_R} fill={colors[dragColorIdx!]} opacity={0.45} />
-                    ) : given[r][c] === null && val === null ? (
-                      // Empty slot: no ghost dot — leave blank
-                      null
-                    ) : null}
-                  </g>
+            {(() => {
+                // Detect duplicate colour values in this box (conflict = appears >1 time)
+                const flat = board.flat().filter(v => v !== null)
+                const dupVals = new Set(flat.filter((v, i) => flat.indexOf(v) !== i))
+                return Array.from({ length: 2 }, (_, r) =>
+                  Array.from({ length: 2 }, (_, c) => {
+                    const cx = gx + c * CS_CELL + CS_CELL / 2
+                    const cy = gy + r * CS_CELL + CS_CELL / 2
+                    const val = board[r][c]
+                    const isHover      = hoverCell?.box === box && hoverCell?.r === r && hoverCell?.c === c
+                    const isFlying     = flyDot?.box === box && flyDot?.r === r && flyDot?.c === c
+                    const isConflict   = val !== null && given[r][c] === null && dupVals.has(val)
+                    return (
+                      <g key={`${r}${c}`}>
+                        {isHover && (
+                          <rect x={gx + c * CS_CELL + 2} y={gy + r * CS_CELL + 2}
+                            width={CS_CELL - 4} height={CS_CELL - 4}
+                            fill={`${colors[dragColorIdx!]}30`} rx={5} />
+                        )}
+                        {val !== null && !isFlying ? (
+                          <circle cx={cx} cy={cy} r={cs1DotR} fill={colors[val]}
+                            style={{ filter: isConflict ? 'drop-shadow(0 0 6px rgba(255,80,130,0.95))' : 'none' }} />
+                        ) : isHover ? (
+                          <circle cx={cx} cy={cy} r={cs1DotR} fill={colors[dragColorIdx!]} opacity={0.45} />
+                        ) : null}
+                      </g>
+                    )
+                  })
                 )
-              })
-            )}
+              })()}
           </g>
         )
       })}
@@ -6829,6 +6861,38 @@ function CS1Page() {
     )
   }
 
+  // ── Misplaced X overlays (one per box) ──────────────────────────────────────
+  const boxConflicted = (board: (number | null)[][], pos: { r: number; c: number } | null) => {
+    if (!pos) return false
+    const val = board[pos.r]?.[pos.c]
+    return val !== null && board.flat().filter(v => v === val).length > 1
+  }
+  const conflictA = boxConflicted(boardA, lastPlacedA)
+  const conflictB = boxConflicted(boardB, lastPlacedB)
+
+  const misplacedX = (box: 'A' | 'B', pos: { r: number; c: number } | null, conflict: boolean, onClear: () => void) => {
+    if (!pos || !conflict || !!flyDot) return null
+    const svg = svgRef.current; if (!svg) return null
+    const rect = svg.getBoundingClientRect(); if (!rect.width) return null
+    const ox = box === 'A' ? 0 : B_OX
+    const oy = box === 'A' ? 0 : B_OY
+    const svgCx = ox + CS_PAD + pos.c * CS_CELL + CS_CELL / 2
+    const svgCy = oy + CS_PAD + pos.r * CS_CELL + CS_CELL / 2
+    const sx = rect.left + svgCx * (rect.width  / VW)
+    const sy = rect.top  + svgCy * (rect.height / VH)
+    const dp = cs1DotR * (rect.width / VW)   // dot pixel radius
+    return (
+      <div key={`x${box}`} onClick={onClear} style={{
+        position: 'fixed', left: sx - dp, top: sy - dp,
+        width: dp * 2, height: dp * 2,
+        display: 'flex', alignItems: 'center', justifyContent: 'center',
+        cursor: 'pointer', pointerEvents: 'auto', zIndex: 9990,
+      }}>
+        <LucideX size={Math.round(dp * 1.1)} strokeWidth={2.5} color="rgba(255,255,255,0.85)" />
+      </div>
+    )
+  }
+
   const fixedOverlays = (
     <>
       <style>{`@keyframes csErrorPop {
@@ -6837,6 +6901,8 @@ function CS1Page() {
         100% { opacity: 0;  transform: scale(0.5); }
       }`}</style>
       {ghostDot}{errorFlashEl}{flyDotEl}
+      {misplacedX('A', lastPlacedA, conflictA, () => { setBoardA(prev => { const n = prev.map(r => [...r]); n[lastPlacedA!.r][lastPlacedA!.c] = null; return n }); setLastPlacedA(null) })}
+      {misplacedX('B', lastPlacedB, conflictB, () => { setBoardB(prev => { const n = prev.map(r => [...r]); n[lastPlacedB!.r][lastPlacedB!.c] = null; return n }); setLastPlacedB(null) })}
     </>
   )
 
@@ -6846,13 +6912,13 @@ function CS1Page() {
   if (isLandscape) {
     return (
       <>
-        <div style={{ ...ch4CanvasStyle, flex: 1, display: 'flex', flexDirection: 'row', overflow: 'hidden' }}>
-          <Ch4PlayAgainBtn show={true} onClick={resetBoards} />
-          <div style={{ flex: 1, minWidth: 0, minHeight: 0, display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+        <div ref={canvasDivRef} style={{ ...ch4CanvasStyle, flex: 1, display: 'flex', flexDirection: 'row', overflow: 'hidden' }}>
+          <div style={{ flex: 1, minWidth: 0, minHeight: 0, display: 'flex', alignItems: 'center', justifyContent: 'center', position: 'relative' }}>
             <div ref={boardDivRef}
-              style={{ height: '100%', aspectRatio: `${VW} / ${VH}`, maxWidth: '100%' }}>
+              style={{ width: '100%', aspectRatio: `${VW} / ${VH}`, maxHeight: '100%' }}>
               {svgBoard}
             </div>
+            <Ch4PlayAgainBtn show={true} onClick={resetBoards} bottomLeft />
           </div>
           {palettePanel('column')}
         </div>
@@ -6865,13 +6931,13 @@ function CS1Page() {
 
   return (
     <>
-      <div style={{ ...ch4CanvasStyle, flex: 1, display: 'flex', flexDirection: 'column', overflow: 'hidden', justifyContent: 'center' }}>
-        <Ch4PlayAgainBtn show={true} onClick={resetBoards} />
-        <div style={{ flex: 1, minHeight: 0, display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+      <div ref={canvasDivRef} style={{ ...ch4CanvasStyle, flex: 1, display: 'flex', flexDirection: 'column', overflow: 'hidden', justifyContent: 'center' }}>
+        <div style={{ flex: 1, minHeight: 0, display: 'flex', alignItems: 'center', justifyContent: 'center', position: 'relative' }}>
           <div ref={boardDivRef}
             style={{ height: '100%', aspectRatio: `${VW} / ${VH}`, maxWidth: '100%' }}>
             {svgBoard}
           </div>
+          <Ch4PlayAgainBtn show={true} onClick={resetBoards} bottomLeft />
         </div>
         {palettePanel('row')}
       </div>
@@ -6882,10 +6948,371 @@ function CS1Page() {
   )
 }
 
-function CS4Page() { return <ColorSudokuPage cfg={CS4_CFG} /> }
+// Easier CS4 variants: one box has 3/4 cells pre-filled instead of the usual 2/4.
+// Each variant adds exactly one extra hint to a different box.
+const CS4_PUZZLES_EASY: (number | null)[][][] = [
+  // A: top-left box 3/4 — add blue (1) at (0,1)
+  [
+    [0, 1,    2,    null],
+    [null, 3, null, 1   ],
+    [1,    null, 3, null],
+    [null, 2,    null, 0],
+  ],
+  // B: top-right box 3/4 — add green (3) at (0,3)
+  [
+    [0,    null, 2,    3   ],
+    [null, 3,    null, 1   ],
+    [1,    null, 3,    null],
+    [null, 2,    null, 0   ],
+  ],
+  // C: bottom-left box 3/4 — add green (3) at (3,0)
+  [
+    [0,    null, 2,    null],
+    [null, 3,    null, 1   ],
+    [1,    null, 3,    null],
+    [3,    2,    null, 0   ],
+  ],
+  // D: bottom-right box 3/4 — add yellow (2) at (2,3)
+  [
+    [0,    null, 2,    null],
+    [null, 3,    null, 1   ],
+    [1,    null, 3,    2   ],
+    [null, 2,    null, 0   ],
+  ],
+]
+
+function CS4Page() {
+  const [cfg] = useState<CSCfg>(() => {
+    // ~50% chance of an easier start with one box already 3/4 filled
+    if (Math.random() < 0.5) {
+      const easy = CS4_PUZZLES_EASY[Math.floor(Math.random() * CS4_PUZZLES_EASY.length)]
+      return { ...CS4_CFG, puzzle: easy }
+    }
+    return CS4_CFG
+  })
+  return <ColorSudokuPage cfg={cfg} />
+}
 function CS6Page() { return <ColorSudokuPage cfg={CS6_CFG} /> }
 
-const CHAPTER5_PAGES: React.ComponentType[] = [CS1Page, CS4Page, CS6Page]
+// ── Page 4: Look-and-Find ─────────────────────────────────────────────────────
+// Each tile shows 2 stacked dots. Find all tiles that match the prompt.
+// ─── Look-and-Find shared layer (Ch5 P4 / P5 / P6) ──────────────────────────
+
+const LAF_GREEN = '#50C878'
+const LAF_PAL2  = [RED, BLUE] as const
+const LAF_PAL3  = [RED, YELLOW, BLUE] as const
+const LAF_PAL4  = [RED, YELLOW, BLUE, LAF_GREEN] as const
+
+type LafTile = { dots: number[]; found: boolean; ticking: boolean; wrong: boolean }
+type LafGame = { prompt: number[]; tiles: LafTile[]; matchTotal: number; foundCount: number }
+
+function LafDot({ color, size }: { color: string; size: number }) {
+  return <div style={{ width: size, height: size, borderRadius: '50%', background: color, flexShrink: 0 }} />
+}
+
+function makeLafGame(numColors: number, total: number, dotCount: number): LafGame {
+  const prompt = Array.from({ length: dotCount }, () => Math.floor(Math.random() * numColors))
+  const tiles: LafTile[] = Array.from({ length: total }, () => ({
+    dots: Array.from({ length: dotCount }, () => Math.floor(Math.random() * numColors)),
+    found: false, ticking: false, wrong: false,
+  }))
+  const matchTotal = 2 + Math.floor(Math.random() * Math.min(4, Math.max(1, total - 3)))
+  Array.from({ length: total }, (_, i) => i)
+    .sort(() => Math.random() - 0.5)
+    .slice(0, matchTotal)
+    .forEach(i => { tiles[i].dots = [...prompt] })
+  return { prompt, tiles, matchTotal, foundCount: 0 }
+}
+
+/** A fresh non-matching tile for a given prompt */
+function lafNonMatch(prompt: number[], numColors: number, dotCount: number): LafTile {
+  for (let a = 0; a < 50; a++) {
+    const dots = Array.from({ length: dotCount }, () => Math.floor(Math.random() * numColors))
+    if (!dots.every((d, i) => d === prompt[i])) return { dots, found: false, ticking: false, wrong: false }
+  }
+  const dots = [...prompt]; dots[0] = (dots[0] + 1) % numColors
+  return { dots, found: false, ticking: false, wrong: false }
+}
+
+/** Short ascending chime played when a new prompt is revealed */
+function lafPlayNewRound() {
+  try {
+    const ctx = new (window.AudioContext || (window as any).webkitAudioContext)()
+    const now = ctx.currentTime
+    ;[[523, 0], [659, 0.11], [784, 0.22]].forEach(([freq, t]) => {
+      const osc = ctx.createOscillator(); const g = ctx.createGain()
+      osc.type = 'sine'; osc.frequency.value = freq
+      g.gain.setValueAtTime(0.28, now + t); g.gain.exponentialRampToValueAtTime(0.001, now + t + 0.28)
+      osc.connect(g); g.connect(ctx.destination); osc.start(now + t); osc.stop(now + t + 0.32)
+    })
+  } catch {}
+}
+
+/**
+ * Pick a new prompt from visible (non-found) tiles.
+ * Refill ALL empty (found) slots at once with fresh non-matching tiles.
+ * Guarantee ≥2 matches in the refreshed grid.
+ */
+function lafNextRound(tiles: LafTile[], numColors: number, dotCount: number): LafGame {
+  const visible = tiles.filter(t => !t.found)
+  const src = visible[Math.floor(Math.random() * visible.length)] ?? tiles[0]
+  const prompt = [...src.dots]
+
+  // Refill every empty slot; keep visible tiles unchanged
+  let next = tiles.map(t => t.found
+    ? lafNonMatch(prompt, numColors, dotCount)
+    : { ...t, wrong: false, ticking: false }
+  )
+
+  // Ensure ≥2 matches
+  let matchTotal = next.filter(t => t.dots.every((d, i) => d === prompt[i])).length
+  if (matchTotal < 2) {
+    const needed = 2 + Math.floor(Math.random() * 3) - matchTotal
+    next
+      .map((t, i) => ({ t, i }))
+      .filter(({ t }) => !t.dots.every((d, i) => d === prompt[i]))
+      .sort(() => Math.random() - 0.5)
+      .slice(0, needed)
+      .forEach(({ i }) => { next[i] = { ...next[i], dots: [...prompt] } })
+    matchTotal = next.filter(t => t.dots.every((d, i) => d === prompt[i])).length
+  }
+  return { prompt, tiles: next, matchTotal, foundCount: 0 }
+}
+
+function LafTileCard({ t, i, colors, dotCount, tile, tileActualH, dotD, gap4, shake, done, onTap }: {
+  t: LafTile; i: number; colors: readonly string[]; dotCount: number;
+  tile: number; tileActualH: number; dotD: number; gap4: number;
+  shake: number | null; done: boolean; onTap: (i: number) => void;
+}) {
+  return (
+    <div onClick={() => onTap(i)} style={{
+      width: tile, height: tileActualH, flexShrink: 0,
+      background: '#fff',
+      border: t.wrong ? '2px solid #e53935' : '1.5px solid #ddd',
+      borderRadius: 10,
+      display: 'flex', flexDirection: 'column',
+      alignItems: 'center',
+      justifyContent: (dotCount === 2 && !t.ticking) ? 'space-evenly' : 'center',
+      cursor: done || t.found ? 'default' : 'pointer',
+      transition: 'border-color 0.15s',
+      animation: shake === i ? 'lafShake 0.4s ease' : undefined,
+      visibility: (t.found && !t.ticking) ? 'hidden' : 'visible',
+      WebkitTapHighlightColor: 'transparent',
+    }}>
+      {t.ticking ? (
+        <span style={{ fontSize: Math.round(Math.min(tile, tileActualH) * 0.5), lineHeight: 1 }}>🎉</span>
+      ) : dotCount === 4 ? (
+        /* Square inner grid — equal horizontal and vertical spacing */
+        <div style={{
+          display: 'grid',
+          gridTemplateColumns: `${dotD}px ${dotD}px`,
+          gridTemplateRows: `${dotD}px ${dotD}px`,
+          gap: gap4,
+        }}>
+          {t.dots.map((d, j) => <LafDot key={j} color={colors[d]} size={dotD} />)}
+        </div>
+      ) : (
+        t.dots.map((d, j) => <LafDot key={j} color={colors[d]} size={dotD} />)
+      )}
+    </div>
+  )
+}
+
+function LookAndFind({ colors, cols, rows, numRounds, dotCount, maxDotD, flipPrompt = false }: {
+  colors: readonly string[]; cols: number; rows: number
+  numRounds: 1 | 3; dotCount: 2 | 4; maxDotD?: number; flipPrompt?: boolean
+}) {
+  const isLandscape = useIsLandscape()
+  const active      = useContext(PageActiveCtx)
+  const numColors   = colors.length
+  const total       = cols * rows
+
+  const [game,          setGame]         = useState<LafGame>(() => makeLafGame(numColors, total, dotCount))
+  const [shake,         setShake]        = useState<number | null>(null)
+  const [round,         setRound]        = useState(0)
+  const [pageDone,      setPageDone]     = useState(false)
+  const [promptFaceUp,  setPromptFaceUp] = useState(false)
+  const flipBackTimer = useRef<ReturnType<typeof setTimeout> | null>(null)
+
+  const { prompt, tiles, matchTotal, foundCount } = game
+  const roundDone = matchTotal > 0 && foundCount >= matchTotal
+
+  /** Show the prompt front-face then auto-flip to back after 1.5 s.
+   *  Cancels any existing pending flip-back so timers never stack. */
+  const showThenFlip = () => {
+    if (flipBackTimer.current) clearTimeout(flipBackTimer.current)
+    setPromptFaceUp(true)
+    flipBackTimer.current = setTimeout(() => { setPromptFaceUp(false); flipBackTimer.current = null }, 1500)
+  }
+
+  useEffect(() => {
+    if (active) {
+      setRound(0); setPageDone(false); setGame(makeLafGame(numColors, total, dotCount))
+      if (flipPrompt) showThenFlip(); else setPromptFaceUp(false)
+    }
+  }, [active])  // eslint-disable-line react-hooks/exhaustive-deps
+
+  useEffect(() => {
+    if (!active || !roundDone || pageDone) return
+    const timer = setTimeout(() => {
+      if (round >= numRounds - 1) { setPageDone(true) }
+      else {
+        setRound(r => r + 1)
+        setGame(prev => lafNextRound(prev.tiles, numColors, dotCount))
+        if (flipPrompt) { lafPlayNewRound(); showThenFlip() }
+      }
+    }, 600)
+    return () => clearTimeout(timer)
+  }, [roundDone, active, pageDone, round])  // eslint-disable-line react-hooks/exhaustive-deps
+
+  const tap = (i: number) => {
+    if (!active || roundDone || tiles[i].found || tiles[i].wrong) return
+    const isMatch = tiles[i].dots.every((d, j) => d === prompt[j])
+    if (isMatch) {
+      // Step 1: show 🎉 (ticking)
+      setGame(prev => ({
+        ...prev,
+        foundCount: prev.foundCount + 1,
+        tiles: prev.tiles.map((t, j) => j === i ? { ...t, found: true, ticking: true, wrong: false } : t),
+      }))
+      // Step 2: hide after 500ms (slot stays empty until next prompt refills it)
+      setTimeout(() => {
+        setGame(prev => {
+          if (!prev.tiles[i]?.ticking) return prev  // already reset
+          return { ...prev, tiles: prev.tiles.map((t, j) => j === i ? { ...t, ticking: false } : t) }
+        })
+      }, 500)
+    } else {
+      setShake(i)
+      setGame(prev => ({ ...prev, tiles: prev.tiles.map((t, j) => j === i ? { ...t, wrong: true } : t) }))
+      setTimeout(() => {
+        setShake(null)
+        setGame(prev => ({ ...prev, tiles: prev.tiles.map((t, j) => j === i ? { ...t, wrong: false } : t) }))
+      }, 500)
+    }
+  }
+
+  const containerRef = useRef<HTMLDivElement>(null)
+  const [containerW, setContainerW] = useState(0)
+  const [containerH, setContainerH] = useState(0)
+  useEffect(() => {
+    const el = containerRef.current; if (!el) return
+    const ro = new ResizeObserver(([e]) => {
+      setContainerW(e.contentRect.width); setContainerH(e.contentRect.height)
+    })
+    ro.observe(el); return () => ro.disconnect()
+  }, [])
+
+  const TILE_GAP = 6
+  const tileW = containerW > 0 ? Math.floor((containerW - TILE_GAP * (cols - 1)) / cols) : 60
+  const tileH = containerH > 0 ? Math.floor((containerH - TILE_GAP * (rows - 1)) / rows) : 80
+  const tile  = Math.min(tileW, Math.round(tileH * 0.6), dotCount === 4 ? 100 : 110)
+  const tileActualH = Math.round(tile / 0.6)
+
+  // 4-dot: derive dot size from a square area so spacing is equal in both axes
+  const sq   = dotCount === 4 ? Math.round(Math.min(tile, tileActualH) * 0.82) : 0
+  const gap4 = dotCount === 4 ? Math.round(sq * 0.12) : 0
+  const dotDRaw = dotCount === 2 ? Math.round(tile * 0.72) : Math.floor((sq - gap4) / 2)
+  const dotD = maxDotD != null ? Math.min(dotDRaw, maxDotD) : dotDRaw
+
+  const caption = useMemo(() => <><b>Look and find:</b> tap every tile that matches the pattern!</>, [])
+
+  // Shared prompt face content
+  const promptFace = dotCount === 4 ? (
+    <div style={{ display: 'grid', gridTemplateColumns: `${dotD}px ${dotD}px`, gridTemplateRows: `${dotD}px ${dotD}px`, gap: gap4 }}>
+      {prompt.map((d, k) => <LafDot key={k} color={colors[d]} size={dotD} />)}
+    </div>
+  ) : prompt.map((d, k) => <LafDot key={k} color={colors[d]} size={dotD} />)
+
+  const promptCardStyle: React.CSSProperties = {
+    width: tile, height: tileActualH, flexShrink: 0,
+    background: '#f3f3f6', borderRadius: 10, border: '2px solid #bbb',
+    display: 'flex', flexDirection: 'column', alignItems: 'center',
+    justifyContent: dotCount === 2 ? 'space-evenly' : 'center',
+  }
+
+  const promptCard = flipPrompt ? (
+    /* 3-D flip card — shows front briefly on each new prompt, auto-flips to back.
+       Tap while face-down to peek again. */
+    <div
+      onClick={() => { if (!promptFaceUp) showThenFlip() }}
+      style={{ width: tile, height: tileActualH, flexShrink: 0, perspective: '700px', cursor: promptFaceUp ? 'default' : 'pointer' }}
+    >
+      <div style={{
+        width: '100%', height: '100%', position: 'relative',
+        transformStyle: 'preserve-3d',
+        transform: promptFaceUp ? 'rotateY(0deg)' : 'rotateY(180deg)',
+        transition: 'transform 0.45s ease',
+      }}>
+        {/* Front: pattern */}
+        <div style={{ ...promptCardStyle, position: 'absolute', inset: 0, backfaceVisibility: 'hidden' }}>
+          {promptFace}
+        </div>
+        {/* Back: face-down decoration */}
+        <div style={{
+          ...promptCardStyle, position: 'absolute', inset: 0,
+          backfaceVisibility: 'hidden', transform: 'rotateY(180deg)',
+          justifyContent: 'center', background: '#ebebf0',
+        }}>
+          <span style={{ fontSize: Math.round(Math.min(tile, tileActualH) * 0.28), opacity: 0.25 }}>?</span>
+        </div>
+      </div>
+    </div>
+  ) : (
+    <div style={promptCardStyle}>{promptFace}</div>
+  )
+
+  return (
+    <>
+      <div style={{ ...ch4CanvasStyle, flex: 1, display: 'flex',
+        flexDirection: isLandscape ? 'row' : 'column',
+        overflow: 'hidden', gap: 12, padding: 10,
+      }}>
+        <Ch4PlayAgainBtn show={true} onClick={() => {
+          setRound(0); setPageDone(false); setGame(makeLafGame(numColors, total, dotCount))
+          if (flipPrompt) showThenFlip(); else setPromptFaceUp(false)
+        }} bottomLeft />
+        {/* Prompt card — invisible when done so layout stays stable */}
+        <div style={{ display: 'flex', flexDirection: isLandscape ? 'column' : 'row', alignItems: 'center', justifyContent: 'center', flexShrink: 0, gap: 8, visibility: pageDone ? 'hidden' : 'visible' }}>
+          {promptCard}
+        </div>
+        {/* Grid */}
+        <div ref={containerRef} style={{
+          flex: 1, minWidth: 0, minHeight: 0, display: 'grid',
+          gridTemplateColumns: `repeat(${cols}, ${tile}px)`,
+          gridTemplateRows: `repeat(${rows}, ${tileActualH}px)`,
+          gap: TILE_GAP, alignContent: 'center', justifyContent: 'center',
+        }}>
+          <style>{`@keyframes lafShake{0%,100%{transform:translateX(0)}20%{transform:translateX(-6px)}60%{transform:translateX(6px)}}`}</style>
+          {tiles.map((t, i) => (
+            <LafTileCard key={i} t={t} i={i} colors={colors} dotCount={dotCount}
+              tile={tile} tileActualH={tileActualH} dotD={dotD} gap4={gap4}
+              shake={shake} done={roundDone} onTap={tap} />
+          ))}
+        </div>
+      </div>
+      <IntroText>{caption}</IntroText>
+      <SetDone done={pageDone} />
+    </>
+  )
+}
+
+// P4: 3 colours · 5×3 grid · 1 round · 2-dot · max 64px dots
+function LookAndFindP4() {
+  return <LookAndFind colors={LAF_PAL3} cols={5} rows={3} numRounds={1} dotCount={2} maxDotD={64} />
+}
+
+// P5: 3 colours · 5×3 grid · 3 rounds · 4-dot 2×2 grid · max 64px dots
+function LookAndFindP5() {
+  return <LookAndFind colors={LAF_PAL3} cols={5} rows={3} numRounds={3} dotCount={4} maxDotD={64} />
+}
+
+// P6: 3 colours · 5×3 grid · 3 rounds · 4-dot 2×2 grid · prompt shows then auto-flips
+function LookAndFindP6() {
+  return <LookAndFind colors={LAF_PAL3} cols={5} rows={3} numRounds={3} dotCount={4} flipPrompt />
+}
+
+const CHAPTER5_PAGES: React.ComponentType[] = [CS1Page, CS4Page, CS6Page, LookAndFindP4, LookAndFindP5, LookAndFindP6]
 
 export default function PressHere() {
   const [page,       setPage]      = useState(0)
@@ -7118,10 +7545,10 @@ export default function PressHere() {
 
             {/* Caption row — caption left-aligned, Next button pinned to the right */}
             <div style={{ position: 'relative', display: 'flex', alignItems: 'center', justifyContent: 'flex-start', marginTop: isMobile ? 8 : 14, minHeight: isMobile ? 38 : 46 }}>
-              <div style={{ fontSize: 'clamp(13px,2vw,18px)', fontWeight: 600, color: '#444', lineHeight: 1.4, maxWidth: chapter >= 4 ? 'calc(100% - 90px)' : 'calc(100% - 190px)' }}>
+              <div style={{ fontSize: 'clamp(13px,2vw,18px)', fontWeight: 600, color: '#444', lineHeight: 1.4, maxWidth: chapter === 4 ? 'calc(100% - 90px)' : 'calc(100% - 190px)' }}>
                 {caption}
               </div>
-              {chapter >= 4 ? (
+              {chapter === 4 ? (
                 <div style={{ position: 'absolute', right: 0, display: 'flex', gap: 6 }}>
                   <button
                     onClick={() => nav(page - 1)}
