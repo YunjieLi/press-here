@@ -6895,11 +6895,17 @@ function mj2Assign(types: number[], removed: boolean[], availTypes: number[], ti
   return false
 }
 
+// All 27 tile images precomputed (9 SVGs × 3 color sets).
+// Combined type = svgIdx + setIdx * 9  →  svgIdx = type % 9,  setIdx = floor(type / 9)
+const MJ2_ALL_SRCS: string[][] = MJ2_SETS.map((_, si) => mj2TileSrcs(si))
+
 function mj2NewGame(): number[] {
   const types   = Array(36).fill(-1)
   const removed = Array(36).fill(false)
-  // 2 pairs of each of the 9 types = 18 pairs = 36 tiles
-  const order = [0,1,2,3,4,5,6,7,8,0,1,2,3,4,5,6,7,8].sort(() => Math.random() - 0.5)
+  // Pick 18 of the 27 combined types at random; each becomes exactly 1 pair (2 tiles)
+  // → 18 elements in order, one per pair, so mj2Assign places 18 × 2 = 36 tiles total
+  const order = Array.from({ length: 27 }, (_, i) => i)
+    .sort(() => Math.random() - 0.5).slice(0, 18)
   mj2Assign(types, removed, order, 0)
   return types
 }
@@ -6908,13 +6914,11 @@ function MahjongL2Page() {
   const active = useContext(PageActiveCtx)
   type S = { type: number; removed: boolean }
 
-  const [setIdx,   setSetIdx]   = useState(() => Math.floor(Math.random() * MJ2_SETS.length))
   const [tiles,    setTiles]    = useState<S[]>(() => mj2NewGame().map(t => ({ type: t, removed: false })))
   const [selected, setSelected] = useState<number | null>(null)
   const [matching, setMatching] = useState<ReadonlySet<number>>(new Set())
 
   const resetGame = () => {
-    setSetIdx(Math.floor(Math.random() * MJ2_SETS.length))
     setTiles(mj2NewGame().map(t => ({ type: t, removed: false })))
     setSelected(null)
     setMatching(new Set())
@@ -6972,7 +6976,8 @@ function MahjongL2Page() {
   const totalW = COLS * tileW + (COLS - 1) * GAP
   const totalH = ROWS * tileH + (ROWS - 1) * GAP
 
-  const tileSrcs = useMemo(() => mj2TileSrcs(setIdx), [setIdx])
+  // Decode combined type → src: svgIdx = type % 9, setIdx = floor(type / 9)
+  const tileToSrc = (t: number) => MJ2_ALL_SRCS[Math.floor(t / 9)][t % 9]
 
   const caption = useMemo(() => (
     <><b>Mahjong Level 2!</b> Only top tiles (bright) can be tapped. Match pairs to uncover tiles below.</>
@@ -7014,7 +7019,7 @@ function MahjongL2Page() {
                   >
                     {!tile.removed && (
                       <img
-                        src={tileSrcs[tile.type]}
+                        src={tileToSrc(tile.type)}
                         alt=""
                         draggable={false}
                         style={{
@@ -7022,7 +7027,7 @@ function MahjongL2Page() {
                           borderRadius: 8,
                           outline: isSelected ? `3px solid ${YELLOW}` : 'none',
                           outlineOffset: 2,
-                          filter: blocked ? 'brightness(0.58) saturate(0.4)' : undefined,
+                          filter: blocked ? 'brightness(0.85)' : undefined,
                           transition: 'filter 0.2s, outline 0.1s',
                         }}
                       />
