@@ -13,6 +13,15 @@ import mj6 from '../mahjong/mahjong-6.svg'
 import mj7 from '../mahjong/mahjong-7.svg'
 import mj8 from '../mahjong/mahjong-8.svg'
 import mj9 from '../mahjong/mahjong-9.svg'
+import mj1Raw from '../mahjong/mahjong-1.svg?raw'
+import mj2Raw from '../mahjong/mahjong-2.svg?raw'
+import mj3Raw from '../mahjong/mahjong-3.svg?raw'
+import mj4Raw from '../mahjong/mahjong-4.svg?raw'
+import mj5Raw from '../mahjong/mahjong-5.svg?raw'
+import mj6Raw from '../mahjong/mahjong-6.svg?raw'
+import mj7Raw from '../mahjong/mahjong-7.svg?raw'
+import mj8Raw from '../mahjong/mahjong-8.svg?raw'
+import mj9Raw from '../mahjong/mahjong-9.svg?raw'
 
 const YELLOW = '#FDD302'
 const RED    = '#F63664'
@@ -6815,30 +6824,54 @@ function MahjongPage() {
 }
 
 // Mahjong Level 2 — stacking pyramid
-// Each game randomly picks one of 3 fixed palettes; tiles are rendered as dot-grid cards.
+// Uses the same 9 SVG tile designs as MahjongPage but recolored into 3 fixed sets.
+// Each game randomly picks one set; 6 of the 9 types are chosen for the 6 pairs (12 tiles).
 // Layout: layer 0 = 6 tiles, layer 1 = 4 tiles (offset 0.5), layer 2 = 2 tiles (offset 1.0)
-// All 12 tiles share the same look (top 2 dots = colorA, bottom 4 dots = colorB) so any
-// accessible pair can be removed — the challenge is the pyramid blocking order.
 
-// Fixed palettes: [top-row color (2 dots), bottom-rows color (4 dots)]
-const MJ2_PALETTES: [string, string][] = [
-  ['#5CCBF8', '#F63664'],  // blue + red
-  ['#FF7043', '#FDD302'],  // orange + yellow
-  ['#AB7ADE', '#4CAF6A'],  // purple + green
+// The SVGs have two fill colours: #00C0E8 (blue) and #FF383C (red).
+// Each set maps those to a new pair: [newBlue, newRed].
+const MJ2_SETS: [string, string][] = [
+  ['#00C0E8', '#FF383C'],  // Set 1: original blue + red
+  ['#50C878', '#AF7AC5'],  // Set 2: green + purple
+  ['#FDD302', '#FF8C42'],  // Set 3: yellow + orange
 ]
 
-// Pyramid layout: layer 0=bottom(6), layer 1=middle(4), layer 2=top(2) = 12 slots, 6 pairs
-const MJ2_SLOTS: { layer: number; col: number }[] = [
-  { layer: 0, col: 0 }, { layer: 0, col: 1 }, { layer: 0, col: 2 },
-  { layer: 0, col: 3 }, { layer: 0, col: 4 }, { layer: 0, col: 5 },
-  { layer: 1, col: 0.5 }, { layer: 1, col: 1.5 },
-  { layer: 1, col: 2.5 }, { layer: 1, col: 3.5 },
-  { layer: 2, col: 1.0 }, { layer: 2, col: 2.0 },
+const MJ2_SVG_RAWS = [mj1Raw, mj2Raw, mj3Raw, mj4Raw, mj5Raw, mj6Raw, mj7Raw, mj8Raw, mj9Raw]
+
+function mj2TileSrcs(setIdx: number): string[] {
+  const [blue, red] = MJ2_SETS[setIdx]
+  return MJ2_SVG_RAWS.map(raw =>
+    `data:image/svg+xml,${encodeURIComponent(
+      raw.replace(/#00C0E8/gi, blue).replace(/#FF383C/gi, red)
+    )}`
+  )
+}
+
+// 3-layer 2-D pile — 36 slots, 18 pairs (9 types × 2 pairs each)
+// Layer 0 (bottom, 20): diamond 6×4 grid — rows 0 & 3 have cols 1-4, rows 1 & 2 have cols 0-5
+// Layer 1 (middle, 12): offset +0.6 col / +0.5 row from layer 0
+// Layer 2 (top,    4):  offset +0.5 col / +0.5 row from layer 1  (2×2)
+const MJ2_SLOTS: { layer: number; col: number; row: number }[] = [
+  // --- layer 0 ---
+  { layer: 0, col: 1, row: 0 }, { layer: 0, col: 2, row: 0 }, { layer: 0, col: 3, row: 0 }, { layer: 0, col: 4, row: 0 },
+  { layer: 0, col: 0, row: 1 }, { layer: 0, col: 1, row: 1 }, { layer: 0, col: 2, row: 1 }, { layer: 0, col: 3, row: 1 }, { layer: 0, col: 4, row: 1 }, { layer: 0, col: 5, row: 1 },
+  { layer: 0, col: 0, row: 2 }, { layer: 0, col: 1, row: 2 }, { layer: 0, col: 2, row: 2 }, { layer: 0, col: 3, row: 2 }, { layer: 0, col: 4, row: 2 }, { layer: 0, col: 5, row: 2 },
+  { layer: 0, col: 1, row: 3 }, { layer: 0, col: 2, row: 3 }, { layer: 0, col: 3, row: 3 }, { layer: 0, col: 4, row: 3 },
+  // --- layer 1 ---
+  { layer: 1, col: 0.6, row: 0.5 }, { layer: 1, col: 1.6, row: 0.5 }, { layer: 1, col: 2.6, row: 0.5 }, { layer: 1, col: 3.6, row: 0.5 },
+  { layer: 1, col: 0.6, row: 1.5 }, { layer: 1, col: 1.6, row: 1.5 }, { layer: 1, col: 2.6, row: 1.5 }, { layer: 1, col: 3.6, row: 1.5 }, { layer: 1, col: 4.6, row: 1.5 },
+  { layer: 1, col: 1.6, row: 2.5 }, { layer: 1, col: 2.6, row: 2.5 }, { layer: 1, col: 3.6, row: 2.5 },
+  // --- layer 2 ---
+  { layer: 2, col: 2.1, row: 1.0 }, { layer: 2, col: 3.1, row: 1.0 },
+  { layer: 2, col: 2.1, row: 2.0 }, { layer: 2, col: 3.1, row: 2.0 },
 ]
 
 function mj2Blocked(idx: number, removed: boolean[]): boolean {
   const s = MJ2_SLOTS[idx]
-  return MJ2_SLOTS.some((o, i) => !removed[i] && o.layer === s.layer + 1 && Math.abs(o.col - s.col) < 1)
+  return MJ2_SLOTS.some((o, i) =>
+    !removed[i] && o.layer === s.layer + 1 &&
+    Math.abs(o.col - s.col) < 1 && Math.abs(o.row - s.row) < 1
+  )
 }
 
 // Backtracking generator: assigns types to slots in a valid removal order,
@@ -6863,20 +6896,25 @@ function mj2Assign(types: number[], removed: boolean[], availTypes: number[], ti
 }
 
 function mj2NewGame(): number[] {
-  return Array(12).fill(0)  // all tiles same type; any 2 accessible tiles form a valid pair
+  const types   = Array(36).fill(-1)
+  const removed = Array(36).fill(false)
+  // 2 pairs of each of the 9 types = 18 pairs = 36 tiles
+  const order = [0,1,2,3,4,5,6,7,8,0,1,2,3,4,5,6,7,8].sort(() => Math.random() - 0.5)
+  mj2Assign(types, removed, order, 0)
+  return types
 }
 
 function MahjongL2Page() {
   const active = useContext(PageActiveCtx)
   type S = { type: number; removed: boolean }
 
-  const [paletteIdx, setPaletteIdx] = useState(() => Math.floor(Math.random() * MJ2_PALETTES.length))
+  const [setIdx,   setSetIdx]   = useState(() => Math.floor(Math.random() * MJ2_SETS.length))
   const [tiles,    setTiles]    = useState<S[]>(() => mj2NewGame().map(t => ({ type: t, removed: false })))
   const [selected, setSelected] = useState<number | null>(null)
   const [matching, setMatching] = useState<ReadonlySet<number>>(new Set())
 
   const resetGame = () => {
-    setPaletteIdx(Math.floor(Math.random() * MJ2_PALETTES.length))
+    setSetIdx(Math.floor(Math.random() * MJ2_SETS.length))
     setTiles(mj2NewGame().map(t => ({ type: t, removed: false })))
     setSelected(null)
     setMatching(new Set())
@@ -6923,28 +6961,21 @@ function MahjongL2Page() {
   }, [])
 
   const ASPECT = 272 / 180
-  const GAP = 6, SX = 9, SY = 12, LAYERS = 2  // per-layer pixel shift (right & up)
+  const GAP = 6
+  // 6 cols (0-5) × 4 rows (0-3) base grid; layer offsets are fractional and fit within
+  const COLS = 6, ROWS = 4
 
-  const twByW = cw > 0 ? Math.floor((cw - GAP * 5 - SX * LAYERS) / 6) : 60
-  const twByH = ch > 0 ? Math.floor((ch - SY * LAYERS) / ASPECT) : 60
-  const tileW = Math.min(twByW, twByH, 100)
+  const twByW = cw > 0 ? Math.floor((cw - GAP * (COLS - 1)) / COLS) : 50
+  const twByH = ch > 0 ? Math.floor((ch - GAP * (ROWS - 1)) / ROWS / ASPECT) : 50
+  const tileW = Math.min(twByW, twByH, 90)
   const tileH = Math.round(tileW * ASPECT)
-  const totalW = 6 * tileW + 5 * GAP + LAYERS * SX
-  const totalH = tileH + LAYERS * SY
+  const totalW = COLS * tileW + (COLS - 1) * GAP
+  const totalH = ROWS * tileH + (ROWS - 1) * GAP
 
-  // Dot layout: 2 cols × 3 rows of circles; top row = colorA, rows 2-3 = colorB
-  const [colorA, colorB] = MJ2_PALETTES[paletteIdx]
-  const dotD   = Math.round(tileW * 0.35)
-  const colGap = Math.round((tileW - 2 * dotD) / 3)
-  const rowGap = Math.round((tileH - 3 * dotD) / 4)
-  const dotDefs = [
-    { r: 0, c: 0 }, { r: 0, c: 1 },
-    { r: 1, c: 0 }, { r: 1, c: 1 },
-    { r: 2, c: 0 }, { r: 2, c: 1 },
-  ]
+  const tileSrcs = useMemo(() => mj2TileSrcs(setIdx), [setIdx])
 
   const caption = useMemo(() => (
-    <><b>Mahjong Level 2!</b> Free (bright) tiles can be tapped. Clear the pyramid by removing pairs!</>
+    <><b>Mahjong Level 2!</b> Only top tiles (bright) can be tapped. Match pairs to uncover tiles below.</>
   ), [])
 
   return (
@@ -6961,9 +6992,9 @@ function MahjongL2Page() {
                 const free       = !tile.removed && !blocked
                 const isSelected = selected === idx
                 const isMatching = matching.has(idx)
-                const x = slot.col * (tileW + GAP) + slot.layer * SX
-                const y = (LAYERS - slot.layer) * SY
-                const zIdx = slot.layer * 100 + Math.round(slot.col * 10)
+                const x = slot.col * (tileW + GAP)
+                const y = slot.row * (tileH + GAP)
+                const zIdx = slot.layer * 10000 + Math.round(slot.row * 1000) + Math.round(slot.col * 10)
 
                 return (
                   <div
@@ -6982,27 +7013,19 @@ function MahjongL2Page() {
                     }}
                   >
                     {!tile.removed && (
-                      <div style={{
-                        width: '100%', height: '100%', position: 'relative',
-                        background: 'white',
-                        borderRadius: 8,
-                        boxShadow: '0 4px 0 #C8C8C8, 0 2px 6px rgba(0,0,0,0.08)',
-                        outline: isSelected ? `3px solid ${YELLOW}` : 'none',
-                        outlineOffset: 2,
-                        filter: blocked ? 'brightness(0.62) saturate(0.45)' : undefined,
-                        transition: 'filter 0.2s, outline 0.1s',
-                      }}>
-                        {dotDefs.map((dot, di) => (
-                          <div key={di} style={{
-                            position: 'absolute',
-                            left: colGap + dot.c * (dotD + colGap),
-                            top:  rowGap + dot.r * (dotD + rowGap),
-                            width: dotD, height: dotD,
-                            borderRadius: '50%',
-                            backgroundColor: dot.r === 0 ? colorA : colorB,
-                          }} />
-                        ))}
-                      </div>
+                      <img
+                        src={tileSrcs[tile.type]}
+                        alt=""
+                        draggable={false}
+                        style={{
+                          width: '100%', height: '100%', display: 'block', userSelect: 'none',
+                          borderRadius: 8,
+                          outline: isSelected ? `3px solid ${YELLOW}` : 'none',
+                          outlineOffset: 2,
+                          filter: blocked ? 'brightness(0.58) saturate(0.4)' : undefined,
+                          transition: 'filter 0.2s, outline 0.1s',
+                        }}
+                      />
                     )}
                   </div>
                 )
