@@ -5591,7 +5591,9 @@ function ColorSudokuPage({ cfg }: { cfg: CSCfg }) {
   const dotR = CS_DOT_R   // constant — same physical dot size on all pages
 
   const [board, setBoard] = useState<(number | null)[][]>(() => puzzle.map(row => [...row]))
-  const resetBoard = () => setBoard(puzzle.map(row => [...row]))
+  // userPlaced: all cells placed by the user (key = "r,c"); persists across moves for error tracking
+  const [userPlaced, setUserPlaced] = useState<Set<string>>(new Set())
+  const resetBoard = () => { setBoard(puzzle.map(row => [...row])); setUserPlaced(new Set()) }
 
   // Drag-from-palette state
   const [dragColorIdx, setDragColorIdx] = useState<number | null>(null)
@@ -5605,8 +5607,6 @@ function ColorSudokuPage({ cfg }: { cfg: CSCfg }) {
     fromX: number; fromY: number; toX: number; toY: number;
     cell: { r: number; c: number };
   } | null>(null)
-  // lastPlaced: the most recently user-placed cell (gets the ✕ when conflicting)
-  const [lastPlaced, setLastPlaced] = useState<{ r: number; c: number } | null>(null)
   const svgRef     = useRef<SVGSVGElement>(null)
   // boardSqRef: the square <div> that wraps the SVG — used to measure rendered px size
   const boardSqRef = useRef<HTMLDivElement>(null)
@@ -5627,21 +5627,11 @@ function ColorSudokuPage({ cfg }: { cfg: CSCfg }) {
 
   const isFixed = (r: number, c: number) => puzzle[r][c] !== null
 
-  // misplacedConflict: true when the last-placed dot is still in conflict
-  const misplacedConflict = lastPlaced !== null &&
-    board[lastPlaced.r]?.[lastPlaced.c] !== null &&
-    csConflict(board, lastPlaced.r, lastPlaced.c, size, boxH, boxW)
+  // A user-placed cell is "in error" if it's still on the board and conflicts with another dot
+  const isCellInError = (r: number, c: number) =>
+    userPlaced.has(`${r},${c}`) && board[r]?.[c] !== null &&
+    csConflict(board, r, c, size, boxH, boxW)
 
-  // Screen position of the misplaced cell for the HTML X overlay
-  const misplacedScreenPos: { x: number; y: number } | null = (() => {
-    if (!misplacedConflict || !boardSqRef.current || boardPx === 0) return null
-    const rect = boardSqRef.current.getBoundingClientRect()
-    const scale = boardPx / CS_VB6
-    return {
-      x: rect.left + (gridPad + lastPlaced!.c * CS_CELL + CS_CELL / 2) * scale,
-      y: rect.top  + (gridPad + lastPlaced!.r * CS_CELL + CS_CELL / 2) * scale,
-    }
-  })()
   const dotR_px = boardPx > 0 ? CS_DOT_R * boardPx / CS_VB6 : 20
 
   // Remaining count: how many of each color still need to be placed.
@@ -5682,10 +5672,10 @@ function ColorSudokuPage({ cfg }: { cfg: CSCfg }) {
       const cellOk = cell !== null && !isFixed(cell.r, cell.c) && board[cell.r][cell.c] === null
       const next = cellOk ? board.map(row => [...row]) : null
       if (next) next[cell!.r][cell!.c] = dragColorIdx
-      const valid = cellOk && csSolvable(next!, size, boxH, boxW)
-      if (valid) {
+      if (cellOk) {
+        // Always accept a drop on a valid empty cell; conflict state + X handles wrong placements
         setBoard(next!)
-        setLastPlaced({ r: cell!.r, c: cell!.c })
+        setUserPlaced(prev => new Set([...prev, `${cell!.r},${cell!.c}`]))
         // Compute cell center in screen coords for fly animation
         const boardEl = boardSqRef.current
         if (boardEl) {
@@ -5701,6 +5691,7 @@ function ColorSudokuPage({ cfg }: { cfg: CSCfg }) {
           }))
         }
       } else {
+        // Invalid target (occupied, fixed, or off-board): flash and reject
         setErrorFlash(prev => ({ x: e.clientX, y: e.clientY, id: (prev?.id ?? 0) + 1 }))
       }
       setDragColorIdx(null)
@@ -5742,7 +5733,7 @@ function ColorSudokuPage({ cfg }: { cfg: CSCfg }) {
           const cy       = gridPad + r * CS_CELL + CS_CELL / 2
           const val      = board[r][c]
           const fixed    = isFixed(r, c)
-          const isMisplacedHere = misplacedConflict && lastPlaced?.r === r && lastPlaced?.c === c
+          const isMisplacedHere = isCellInError(r, c)
           const isHover  = hoverCell?.r === r && hoverCell?.c === c && !fixed && val === null
           // Hide board dot while it's flying in
           const isFlying = flyDot?.cell.r === r && flyDot?.cell.c === c
@@ -5879,28 +5870,35 @@ function ColorSudokuPage({ cfg }: { cfg: CSCfg }) {
     )
   }
 
-  // LucideX overlay: tappable X on the misplaced dot, rendered as fixed HTML so it's pixel-perfect
-  const misplacedXOverlay = misplacedConflict && misplacedScreenPos && !flyDot && (
-    <div
-      style={{
-        position: 'fixed',
-        left: misplacedScreenPos.x - dotR_px,
-        top:  misplacedScreenPos.y - dotR_px,
-        width: dotR_px * 2, height: dotR_px * 2,
-        display: 'flex', alignItems: 'center', justifyContent: 'center',
-        pointerEvents: 'auto', cursor: 'pointer',
-        zIndex: 9990,
-      }}
-      onClick={() => {
-        const next = board.map(row => [...row])
-        next[lastPlaced!.r][lastPlaced!.c] = null
-        setBoard(next)
-        setLastPlaced(null)
-      }}
-    >
-      <LucideX size={Math.round(dotR_px * 1.1)} strokeWidth={2.5} color="rgba(255,255,255,0.85)" />
-    </div>
-  )
+  // LucideX overlays: one tappable X per conflicting user-placed dot
+  const misplacedXOverlays = !flyDot && boardPx > 0 && boardSqRef.current
+    ? [...userPlaced].flatMap(key => {
+        const [r, c] = key.split(',').map(Number)
+        if (!isCellInError(r, c)) return []
+        const rect = boardSqRef.current!.getBoundingClientRect()
+        const scale = boardPx / CS_VB6
+        const x = rect.left + (gridPad + c * CS_CELL + CS_CELL / 2) * scale
+        const y = rect.top  + (gridPad + r * CS_CELL + CS_CELL / 2) * scale
+        return [(
+          <div key={key}
+            style={{
+              position: 'fixed', left: x - dotR_px, top: y - dotR_px,
+              width: dotR_px * 2, height: dotR_px * 2,
+              display: 'flex', alignItems: 'center', justifyContent: 'center',
+              pointerEvents: 'auto', cursor: 'pointer', zIndex: 9990,
+            }}
+            onClick={() => {
+              const next = board.map(row => [...row])
+              next[r][c] = null
+              setBoard(next)
+              setUserPlaced(prev => { const s = new Set(prev); s.delete(key); return s })
+            }}
+          >
+            <LucideX size={Math.round(dotR_px * 1.1)} strokeWidth={2.5} color="rgba(255,255,255,0.85)" />
+          </div>
+        )]
+      })
+    : null
 
   const fixedOverlays = (
     <>
@@ -5912,7 +5910,7 @@ function ColorSudokuPage({ cfg }: { cfg: CSCfg }) {
       {ghostDot}
       {errorFlashEl}
       {flyDotEl}
-      {misplacedXOverlay}
+      {misplacedXOverlays}
     </>
   )
 
@@ -6417,11 +6415,13 @@ function makeLafGame(numColors: number, total: number, dotCount: number): LafGam
     dots: Array.from({ length: dotCount }, () => Math.floor(Math.random() * numColors)),
     found: false, ticking: false, wrong: false,
   }))
-  const matchTotal = 2 + Math.floor(Math.random() * Math.min(4, Math.max(1, total - 3)))
+  const targetMatches = 2 + Math.floor(Math.random() * Math.min(4, Math.max(1, total - 3)))
   Array.from({ length: total }, (_, i) => i)
     .sort(() => Math.random() - 0.5)
-    .slice(0, matchTotal)
+    .slice(0, targetMatches)
     .forEach(i => { tiles[i].dots = [...prompt] })
+  // Count actual matches — randomly generated tiles may also happen to match
+  const matchTotal = tiles.filter(t => t.dots.every((d, j) => d === prompt[j])).length
   return { prompt, tiles, matchTotal, foundCount: 0 }
 }
 
