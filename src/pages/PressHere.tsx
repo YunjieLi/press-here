@@ -4,6 +4,15 @@ import { ChevronRight, ChevronLeft, RotateCcw, X as LucideX, Circle as LucideCir
 import { Button } from '@/components/ui/button'
 import { Pagination, PaginationContent, PaginationItem, PaginationLink, PaginationNext, PaginationPrevious } from '@/components/ui/pagination'
 import { cn } from '@/lib/utils'
+import mj1 from '../mahjong/mahjong-1.svg'
+import mj2 from '../mahjong/mahjong-2.svg'
+import mj3 from '../mahjong/mahjong-3.svg'
+import mj4 from '../mahjong/mahjong-4.svg'
+import mj5 from '../mahjong/mahjong-5.svg'
+import mj6 from '../mahjong/mahjong-6.svg'
+import mj7 from '../mahjong/mahjong-7.svg'
+import mj8 from '../mahjong/mahjong-8.svg'
+import mj9 from '../mahjong/mahjong-9.svg'
 
 const YELLOW = '#FDD302'
 const RED    = '#F63664'
@@ -12,24 +21,19 @@ const DOT_SIZE = 80
 
 type Player = 'X' | 'O' | 'Y'
 
-// Fixed horizontal positions for color baskets — same across all collection pages
 const BASKET_LEFT: Record<string, string> = { [YELLOW]: '50%', [BLUE]: '25%', [RED]: '75%' }
-// Fixed vertical positions in portrait mode — same across all collection pages so baskets don't jump
 const BASKET_TOP:  Record<string, string> = { [YELLOW]: '25%', [BLUE]: '50%', [RED]: '75%' }
 
 const COL_X = [25, 50, 75]
 const ROW_Y = [84, 67, 50, 33, 16]
 
-// ─── Physics ────────────────────────────────────────────────────────────────
 type PhysDot = { id: string; color: string; x: number; y: number; vx: number; vy: number; friction: number }
 
-// RX/RY based on 960 wide canvas at min-width
-const RX = (DOT_SIZE / 2 / 960) * 100   // ≈ 4.17 %
-const RY = (DOT_SIZE / 2 / 520) * 100   // ≈ 7.69 %
+const RX = (DOT_SIZE / 2 / 960) * 100
+const RY = (DOT_SIZE / 2 / 520) * 100
 const BASE_DAMPING = 0.96
 const BOUNCE = 0.82
 
-// ─── Dot positions ───────────────────────────────────────────────────────────
 type DotSpec = { id: string; color: string; x: number; y: number; onClick: () => void; interactive?: boolean }
 
 const SCATTERED: { x: number; y: number }[] = [
@@ -39,10 +43,8 @@ const SCATTERED: { x: number; y: number }[] = [
 ]
 
 const PILE_Y = [12, 45, 72, 52, 85, 22, 35, 65, 80, 28, 10, 50, 30, 90, 68]
-const PILED_LEFT:  { x: number; y: number }[] = PILE_Y.map(y => ({ x: RX,       y }))
 const PILED_RIGHT: { x: number; y: number }[] = PILE_Y.map(y => ({ x: 100 - RX, y }))
 
-// ─── Contexts ────────────────────────────────────────────────────────────────
 const CaptionCtx    = createContext<(n: React.ReactNode) => void>(() => {})
 const DoneCtx       = createContext<(done: boolean) => void>(() => {})
 const PageActiveCtx = createContext<boolean>(true)
@@ -63,11 +65,9 @@ const DotSizeCtx = createContext(DOT_SIZE)
 type ShapeDef = { vertices: [number,number][]; open: boolean; emoji: string; label: string }
 const Ch2ShapesCtx = createContext<ShapeDef[]>([])
 
-// ─── Sound effects (Web Audio API — no files needed) ─────────────────────────
 function playPageComplete() {
   try {
     const ctx  = new AudioContext()
-    // Quick ascending chime: C5 → E5 → G5
     const notes: [number, number][] = [[523.25, 0], [659.25, 0.13], [783.99, 0.26]]
     notes.forEach(([freq, delay]) => {
       const osc = ctx.createOscillator(); const gain = ctx.createGain()
@@ -85,7 +85,6 @@ function playPageComplete() {
 function playChapterComplete() {
   try {
     const ctx = new AudioContext()
-    // Triumphant fanfare: G4 → C5 → E5 → G5 → C6 (held)
     const notes: [number, number, number][] = [
       [392.00, 0.00, 0.15],
       [523.25, 0.15, 0.15],
@@ -106,7 +105,6 @@ function playChapterComplete() {
   } catch { /* blocked */ }
 }
 
-// ─── Context consumers ────────────────────────────────────────────────────────
 function IntroText({ children }: { children: React.ReactNode }) {
   const active     = useContext(PageActiveCtx)
   const setCaption = useContext(CaptionCtx)
@@ -126,7 +124,6 @@ function SetDone({ done, celebrate = true }: { done: boolean; celebrate?: boolea
   return (active && done && celebrate) ? <ClapCelebration /> : null
 }
 
-// ─── Dot component (no entrance animation) ───────────────────────────────────
 function DotMount({ color, x, y, onClick, interactive = true }: {
   color: string; x: number; y: number; onClick: () => void; interactive?: boolean
 }) {
@@ -139,7 +136,6 @@ function DotMount({ color, x, y, onClick, interactive = true }: {
   )
 }
 
-// ─── Shared canvas ────────────────────────────────────────────────────────────
 function PageCanvas({ dots, intro, done }: { dots: DotSpec[]; intro: string; done: boolean }) {
   return (
     <>
@@ -152,24 +148,6 @@ function PageCanvas({ dots, intro, done }: { dots: DotSpec[]; intro: string; don
       <SetDone done={done} />
     </>
   )
-}
-
-// ─── Page 1 & 2 shared: RYB shimmer animation ────────────────────────────────
-const GRAY = '#87898B'
-
-// Injected once; both pages share the same keyframe name
-function useRYBKeyframe() {
-  useLayoutEffect(() => {
-    const s = document.createElement('style')
-    s.textContent = `@keyframes rybShimmer{
-      0%  {background:${RED}}
-      33% {background:${YELLOW}}
-      67% {background:${BLUE}}
-      100%{background:${RED}}
-    }`
-    document.head.appendChild(s)
-    return () => { document.head.removeChild(s) }
-  }, [])
 }
 
 function RainbowDot({ i, onClick, disabled }: { i: number; onClick: () => void; disabled?: boolean }) {
@@ -192,12 +170,10 @@ function RainbowDot({ i, onClick, disabled }: { i: number; onClick: () => void; 
   )
 }
 
-// ─── Page 1 ──────────────────────────────────────────────────────────────────
 function Page1() {
   const [count, setCount] = useState(1)
   const done = count === 3
   const bump = () => setCount(c => Math.min(c + 1, 3))
-  useRYBKeyframe()
 
   return (
     <>
@@ -212,14 +188,12 @@ function Page1() {
   )
 }
 
-// ─── Page 2+3 — reveal colors then grow columns ───────────────────────────────
 function Page23() {
   const ds          = useContext(DotSizeCtx)
   const [counts, setCounts] = useState([0, 0, 0])
   const done        = counts.every(c => c === 5)
   const allRevealed = counts.every(c => c >= 1)
   const COLORS = [RED, YELLOW, BLUE]
-  useRYBKeyframe()
 
   const bump = (i: number) =>
     setCounts(prev => prev.map((v, j) => j === i ? Math.min(v + 1, 5) : v))
@@ -278,7 +252,6 @@ function Page23() {
   )
 }
 
-// ─── Dot-dot collision resolution (elastic, equal mass) ─────────────────────
 function resolveCollisions(dots: PhysDot[], cw: number, ch: number, dotSize = DOT_SIZE): PhysDot[] {
   const result = dots.map(d => ({ ...d }))
   const n = result.length
@@ -291,27 +264,22 @@ function resolveCollisions(dots: PhysDot[], cw: number, ch: number, dotSize = DO
       const dist = Math.sqrt(dx * dx + dy * dy)
       if (dist >= minDist || dist < 0.001) continue
 
-      // Unit normal pointing from j → i
       const nx = dx / dist
       const ny = dy / dist
 
-      // Velocities in px/frame
       const v1x = result[i].vx * cw / 100,  v1y = result[i].vy * ch / 100
       const v2x = result[j].vx * cw / 100,  v2y = result[j].vy * ch / 100
 
-      // Scalar normal components
       const v1n = v1x * nx + v1y * ny
       const v2n = v2x * nx + v2y * ny
 
       if (v1n - v2n > 0) continue  // already separating
 
-      // Elastic equal-mass collision: swap normal components
       result[i].vx = (v1x - v1n * nx + v2n * nx) / cw * 100
       result[i].vy = (v1y - v1n * ny + v2n * ny) / ch * 100
       result[j].vx = (v2x - v2n * nx + v1n * nx) / cw * 100
       result[j].vy = (v2y - v2n * ny + v1n * ny) / ch * 100
 
-      // Push apart so they no longer overlap
       const push = (minDist - dist) / 2
       result[i].x += nx * push / cw * 100
       result[i].y += ny * push / ch * 100
@@ -322,7 +290,6 @@ function resolveCollisions(dots: PhysDot[], cw: number, ch: number, dotSize = DO
   return result
 }
 
-// ─── Page 4 ──────────────────────────────────────────────────────────────────
 function initPhysDots(): PhysDot[] {
   return [RED, YELLOW, BLUE].flatMap((color, ci) =>
     Array.from({ length: 5 }, (_, row) => ({
@@ -397,7 +364,6 @@ function Page4() {
   )
 }
 
-// ─── Pages 5+6 (merged) — 4-direction gravity ────────────────────────────────
 function mkTiltDots(positions: { x: number; y: number }[]): PhysDot[] {
   return [RED, YELLOW, BLUE].flatMap((color, ci) =>
     Array.from({ length: 5 }, (_, i) => ({
@@ -427,7 +393,6 @@ function Page56() {
   const [usedDirs, setUsedDirs] = useState<Set<GravDir>>(new Set())
   const done = usedDirs.size === 4
 
-  // Load dot positions from previous page
   useEffect(() => {
     if (!active || initedRef.current) return
     const src = handoff.current.page4Dots
@@ -438,7 +403,6 @@ function Page56() {
     }
   }, [active])   // eslint-disable-line react-hooks/exhaustive-deps
 
-  // Always-running RAF: Brownian motion between gravity tilts
   useEffect(() => {
     if (!active) return
     let alive = true
@@ -454,14 +418,12 @@ function Page56() {
 
       dotsRef.current = dotsRef.current.map(({ x, y, vx, vy, friction, ...rest }) => {
         if (mode === 'brownian') {
-          // Gentle random walk between layouts
           vx += (Math.random() - 0.5) * 0.10
           vy += (Math.random() - 0.5) * 0.10
           const spd = Math.sqrt(vx * vx + vy * vy)
           if (spd > 0.45) { vx = vx / spd * 0.45; vy = vy / spd * 0.45 }
           settling = false   // brownian never "settles" — loop keeps running
         } else {
-          // Gravity tilt
           vx += gx; vy += gy
           if (Math.abs(vx) > 0.05 || Math.abs(vy) > 0.05) settling = false
         }
@@ -476,7 +438,6 @@ function Page56() {
 
       dotsRef.current = resolveCollisions(dotsRef.current, cw, ch)
 
-      // Gravity settled → switch back to Brownian
       if (mode === 'gravity' && settling) {
         modeRef.current = 'brownian'
         gravRef.current = { gx: 0, gy: 0 }
@@ -492,8 +453,6 @@ function Page56() {
       if (rafRef.current) { cancelAnimationFrame(rafRef.current); rafRef.current = null }
     }
   }, [active])   // eslint-disable-line react-hooks/exhaustive-deps
-
-  useEffect(() => () => { if (rafRef.current) cancelAnimationFrame(rafRef.current) }, [])
 
   function applyDir(dir: GravDir) {
     const strength = Math.min(0.08 + tapsRef.current * 0.07, 0.45)
@@ -557,14 +516,11 @@ function Page56() {
   )
 }
 
-// ─── Page 7 — lineup ──────────────────────────────────────────────────────────
 const COLOR_ROW  = Array.from({ length: 15 }, (_, i) => [RED, YELLOW, BLUE][i % 3])
-const ROW_MARGIN    = (DOT_SIZE / 2 / 960) * 100
-const LINEUP_MARGIN = 8   // % horizontal padding for pages 7 & 8
+const LINEUP_MARGIN = 8
 
-// Two-row lineup: 8 dots on top, 7 on bottom
 const LINEUP_TOP_N = 8
-const LINEUP_BOT_N = COLOR_ROW.length - LINEUP_TOP_N  // 7
+const LINEUP_BOT_N = COLOR_ROW.length - LINEUP_TOP_N
 const LINEUP_Y     = [37, 63]
 const LINEUP_TOP_X = Array.from({ length: LINEUP_TOP_N }, (_, i) => LINEUP_MARGIN + i * ((100 - 2 * LINEUP_MARGIN) / (LINEUP_TOP_N - 1)))
 const LINEUP_BOT_X = Array.from({ length: LINEUP_BOT_N }, (_, i) => LINEUP_MARGIN + i * ((100 - 2 * LINEUP_MARGIN) / (LINEUP_BOT_N - 1)))
@@ -574,7 +530,6 @@ function lineupPos(i: number): { x: number; y: number } {
     : { x: LINEUP_BOT_X[i - LINEUP_TOP_N], y: LINEUP_Y[1] }
 }
 
-// ─── Four lineup shapes for Page 7 ───────────────────────────────────────────
 const SHAPE_NAMES = ['2 lines', '3 lines', 'circle', 'arch'] as const
 const TOTAL_SHAPES = SHAPE_NAMES.length
 
@@ -681,7 +636,6 @@ function Page7() {
   )
 }
 
-// ─── Page 8 — lights out ──────────────────────────────────────────────────────
 function Page8() {
   const ds                        = useContext(DotSizeCtx)
   const [dark, setDark]           = useState(false)
@@ -689,7 +643,6 @@ function Page8() {
   const done8 = toggleCount >= 2   // off once + back on once
   const canvasRef = useRef<HTMLDivElement>(null)
   const dimsRef   = useRef({ cw: 960, ch: 640 })
-  // Persistent dot positions (% coords); driven by RAF during swap
   const posRef   = useRef(COLOR_ROW.map((_, i) => shapePos(3, i, 960, 640)))
   const animRef  = useRef<number | null>(null)
   const timerRef = useRef<ReturnType<typeof setTimeout> | null>(null)
@@ -723,14 +676,10 @@ function Page8() {
     const p0 = { ...posRef.current[ri] }   // red start → will move to p1
     const p1 = { ...posRef.current[bi] }   // blue start → will move to p0
 
-    // Red travels via high route (above both lineup rows at y≈37% and y≈63%)
-    // Blue travels via low route (below both rows)
-    // This guarantees neither path crosses any static dot
     const wx = () => (Math.random() - 0.5) * 10   // ±5% organic x wobble
     const hiY = 3 + Math.random() * 3              // 3–6% (above arch top at ~8%)
     const loY = 69 + Math.random() * 7             // 69–76% (below arch endpoints at ~65%)
 
-    // Cubic bezier: go up/across/down for red, down/across/up for blue
     const cpR1 = { x: p0.x + wx(), y: hiY }
     const cpR2 = { x: p1.x + wx(), y: hiY }
     const cpB1 = { x: p1.x + wx(), y: loY }
@@ -816,14 +765,7 @@ function Page8() {
   )
 }
 
-// ─── Clap celebration ─────────────────────────────────────────────────────────
 function ClapCelebration() {
-  useLayoutEffect(() => {
-    const s = document.createElement('style')
-    s.textContent = '@keyframes clapPop{0%{opacity:0;transform:translate(-50%,-50%) scale(0.3)}25%{opacity:1;transform:translate(-50%,-50%) scale(1.4)}65%{opacity:1;transform:translate(-50%,-50%) scale(1)}100%{opacity:0;transform:translate(-50%,-50%) scale(0.8)}}'
-    document.head.appendChild(s)
-    return () => { document.head.removeChild(s) }
-  }, [])
   return (
     <div style={{
       position: 'absolute', left: '50%', top: '50%',
@@ -834,7 +776,6 @@ function ClapCelebration() {
   )
 }
 
-// ─── Page 9 — collect yellow dots ────────────────────────────────────────────
 const YELLOW_IDXS = COLOR_ROW.flatMap((c, i) => c === YELLOW ? [i] : [])
 type CollectPhase = 'arch' | 'flying' | 'gone'
 
@@ -871,7 +812,6 @@ function Page9() {
     return () => obs.disconnect()
   }, [])
 
-  // flying → gone after position animation completes
   useEffect(() => {
     const flyingIdxs = phases.flatMap((p, i) => p === 'flying' ? [i] : [])
     if (flyingIdxs.length === 0) return
@@ -948,7 +888,6 @@ function Page9() {
   )
 }
 
-// ─── Brownian catch pages ─────────────────────────────────────────────────────
 type BrownDot = { id: string; x: number; y: number; vx: number; vy: number; phase: CollectPhase }
 
 function makeBrownDots(targetColor: string, cw: number, ch: number): BrownDot[] {
@@ -1152,7 +1091,6 @@ function BrownCatch({ targetColor, maxSpd, prevColors, previewColor }: {
 function Page10() { return <BrownCatch targetColor={BLUE} maxSpd={0.35} prevColors={[YELLOW]} previewColor={RED} /> }
 function Page11() { return <BrownCatch targetColor={RED}  maxSpd={0.7}  prevColors={[YELLOW, BLUE]} /> }
 
-// ─── Shared styles ────────────────────────────────────────────────────────────
 const canvasStyle: React.CSSProperties = {
   flex: 1, minHeight: 0,
   width: '100%',
@@ -1169,7 +1107,6 @@ const dotStyle = (color: string, interactive = true, ds = DOT_SIZE): React.CSSPr
   WebkitTapHighlightColor: 'transparent',
 })
 
-// ─── Chapter 2 shared constants ───────────────────────────────────────────────
 const BURST_COLORS = [
   '#ff2200','#ff6600','#ffaa00','#ffdd00','#aadd00',
   '#33bb33','#00bbaa','#00aaff','#4466ff','#8833ff',
@@ -1179,7 +1116,6 @@ const BURST_COUNT = 70    // 5 per color × 14 colors
 const MINI_PX     = 26   // dot diameter in px (ch2)
 const RAINBOW_BG  = 'linear-gradient(90deg,#ff0000,#ff9900,#ffff00,#33dd33,#3399ff,#cc33ff,#ff0000)'
 
-// ─── Chapter 2 Page 1 — merge + rainbow burst ────────────────────────────────
 type Ch2P1Phase = 'idle' | 'merging' | 'merged' | 'shining' | 'lit' | 'rainbow' | 'bursting' | 'roaming'
 
 function Chapter2Page1() {
@@ -1196,17 +1132,6 @@ function Chapter2Page1() {
   const [, tick]  = useState(0)
 
   useLayoutEffect(() => {
-    const s = document.createElement('style')
-    s.textContent = [
-      '@keyframes beamReveal{0%{transform:scaleY(0);opacity:0}15%{opacity:1}65%{transform:scaleY(1);opacity:0.72}100%{transform:scaleY(1);opacity:0}}',
-      `@keyframes rybShimmer{0%{background:${RED}}33%{background:${YELLOW}}67%{background:${BLUE}}100%{background:${RED}}}`,
-      '@keyframes fadeIn{0%{opacity:0}100%{opacity:1}}',
-    ].join('')
-    document.head.appendChild(s)
-    return () => { document.head.removeChild(s) }
-  }, [])
-
-  useLayoutEffect(() => {
     const el = canvasRef.current
     if (!el) return
     const obs = new ResizeObserver(entries => {
@@ -1217,7 +1142,6 @@ function Chapter2Page1() {
     return () => obs.disconnect()
   }, [])
 
-  // ── Merge sequence (auto-triggered on activation) ─────────────────────────
   const mergeTimersRef = useRef<ReturnType<typeof setTimeout>[]>([])
 
   function cancelMergeTimers() {
@@ -1225,7 +1149,6 @@ function Chapter2Page1() {
     mergeTimersRef.current = []
   }
 
-  // Cancel timers on unmount
   useEffect(() => () => cancelMergeTimers(), []) // eslint-disable-line react-hooks/exhaustive-deps
 
   function startMerge() {
@@ -1250,14 +1173,12 @@ function Chapter2Page1() {
     mergeTimersRef.current.push(t1)
   }
 
-  // Auto-trigger merge when page becomes active; cancel if it goes inactive
   useEffect(() => {
     if (!active) { cancelMergeTimers(); return }
     const t = setTimeout(startMerge, 400)   // small delay so page is visible first
     return () => clearTimeout(t)
   }, [active]) // eslint-disable-line react-hooks/exhaustive-deps
 
-  // ── Firework burst ────────────────────────────────────────────────────────
   function handleRainbowBasketClick() {
     if (phaseRef.current !== 'rainbow') return
     const { ch } = dimsRef.current
@@ -1281,7 +1202,6 @@ function Chapter2Page1() {
     phaseRef.current = 'bursting'; setPhase('bursting')
   }
 
-  // ── RAF loop (bursting → roaming) ─────────────────────────────────────────
   useEffect(() => {
     if (!active || (phaseRef.current !== 'bursting' && phaseRef.current !== 'roaming')) return
     let alive = true
@@ -1329,16 +1249,11 @@ function Chapter2Page1() {
     return () => { alive = false; if (rafRef.current) { cancelAnimationFrame(rafRef.current); rafRef.current = null } }
   }, [active, phase])   // eslint-disable-line react-hooks/exhaustive-deps
 
-  useEffect(() => () => { if (rafRef.current) cancelAnimationFrame(rafRef.current) }, [])
-
-  // ── Derived display values ─────────────────────────────────────────────────
   const colors = [BLUE, YELLOW, RED]
   const bigBasketShown = phase === 'merged' || phase === 'shining' || phase === 'lit' || phase === 'rainbow'
   const isRainbow      = phase === 'lit' || phase === 'rainbow'
   const showBeam       = phase === 'shining' || phase === 'lit'
-  // Small baskets only shown before the merge completes
   const showSmallBaskets = phase === 'idle' || phase === 'merging'
-
 
   return (
     <>
@@ -1410,268 +1325,99 @@ function Chapter2Page1() {
   )
 }
 
-// ─── Great Job screen (Ch2 / Ch3 completion) ─────────────────────────────────
+const completionScreenStyle: React.CSSProperties = {
+  height: '100dvh', display: 'flex', flexDirection: 'column',
+  alignItems: 'center', justifyContent: 'center', gap: 'clamp(20px, 4vw, 36px)',
+  background: '#fff', fontFamily: '"Nunito Variable", Nunito, sans-serif', userSelect: 'none',
+}
+const shineTextStyle: React.CSSProperties = {
+  fontSize: 'clamp(56px,8vw,96px)', fontWeight: 900, letterSpacing: -2,
+  background: 'linear-gradient(90deg, #FDD302 0%, #F63664 30%, #5CCBF8 60%, #FDD302 100%)',
+  backgroundSize: '300% auto',
+  WebkitBackgroundClip: 'text', WebkitTextFillColor: 'transparent',
+  backgroundClip: 'text',
+  animation: 'shineText 2.8s linear infinite',
+}
+
+function GhostBtn({ onClick, children }: { onClick: () => void; children: React.ReactNode }) {
+  return (
+    <button
+      onClick={onClick}
+      style={{ display: 'flex', alignItems: 'center', gap: 8, padding: '12px 30px', borderRadius: 40, background: 'transparent', border: '2px solid #ccc', fontSize: 17, fontWeight: 700, color: '#888', fontFamily: 'inherit', cursor: 'pointer' }}
+      onMouseEnter={e => { e.currentTarget.style.borderColor = '#aaa'; e.currentTarget.style.color = '#555' }}
+      onMouseLeave={e => { e.currentTarget.style.borderColor = '#ccc'; e.currentTarget.style.color = '#888' }}
+      onMouseDown={e => (e.currentTarget.style.transform = 'scale(0.96)')}
+      onMouseUp={e => (e.currentTarget.style.transform = 'scale(1)')}
+    >{children}</button>
+  )
+}
+
+function PrimaryBtn({ onClick, children }: { onClick: () => void; children: React.ReactNode }) {
+  return (
+    <button
+      onClick={onClick}
+      style={{ display: 'flex', alignItems: 'center', gap: 8, padding: '12px 30px', borderRadius: 40, background: '#FDD302', border: 'none', fontSize: 17, fontWeight: 800, color: '#333', fontFamily: 'inherit', cursor: 'pointer' }}
+      onMouseEnter={e => (e.currentTarget.style.background = '#ffc700')}
+      onMouseLeave={e => (e.currentTarget.style.background = '#FDD302')}
+      onMouseDown={e => (e.currentTarget.style.transform = 'scale(0.96)')}
+      onMouseUp={e => (e.currentTarget.style.transform = 'scale(1)')}
+    >{children}</button>
+  )
+}
+
 function GreatJob({ onReset, onNextChapter }: { onReset: () => void; onNextChapter?: () => void }) {
-  useLayoutEffect(() => {
-    const s = document.createElement('style')
-    s.textContent = '@keyframes shineText2{0%{background-position:200% center}100%{background-position:0% center}}'
-    document.head.appendChild(s)
-    return () => { document.head.removeChild(s) }
-  }, [])
   return (
-    <div style={{
-      height: '100dvh', display: 'flex', flexDirection: 'column',
-      alignItems: 'center', justifyContent: 'center', gap: 'clamp(20px, 4vw, 36px)',
-      background: '#fff',
-      fontFamily: '"Nunito Variable", Nunito, sans-serif',
-      userSelect: 'none',
-    }}>
-      <img
-        src={import.meta.env.BASE_URL + 'completion-ch2.gif'}
-        alt="Great job!"
-        style={{ width: 'clamp(180px, 50vw, 320px)', height: 'clamp(180px, 50vw, 320px)', borderRadius: 28, objectFit: 'cover' }}
-      />
-      <div style={{
-        fontSize: 'clamp(56px,8vw,96px)', fontWeight: 900, letterSpacing: -2,
-        background: 'linear-gradient(90deg, #FDD302 0%, #F63664 30%, #5CCBF8 60%, #FDD302 100%)',
-        backgroundSize: '300% auto',
-        WebkitBackgroundClip: 'text', WebkitTextFillColor: 'transparent',
-        backgroundClip: 'text',
-        animation: 'shineText2 2.8s linear infinite',
-      }}>
-        Great job!
-      </div>
+    <div style={completionScreenStyle}>
+      <img src={import.meta.env.BASE_URL + 'completion-ch2.gif'} alt="Great job!"
+        style={{ width: 'clamp(180px, 50vw, 320px)', height: 'clamp(180px, 50vw, 320px)', borderRadius: 28, objectFit: 'cover' }} />
+      <div style={shineTextStyle}>Great job!</div>
       <div style={{ display: 'flex', gap: 16, alignItems: 'center' }}>
-        <button
-          onClick={onReset}
-          style={{
-            display: 'flex', alignItems: 'center', gap: 8,
-            padding: '12px 30px', borderRadius: 40,
-            background: 'transparent', border: '2px solid #ccc',
-            fontSize: 17, fontWeight: 700, color: '#888',
-            fontFamily: 'inherit', cursor: 'pointer',
-          }}
-          onMouseEnter={e => { e.currentTarget.style.borderColor = '#aaa'; e.currentTarget.style.color = '#555' }}
-          onMouseLeave={e => { e.currentTarget.style.borderColor = '#ccc'; e.currentTarget.style.color = '#888' }}
-          onMouseDown={e => (e.currentTarget.style.transform = 'scale(0.96)')}
-          onMouseUp={e => (e.currentTarget.style.transform = 'scale(1)')}
-        >
-          <RotateCcw size={16} /> Play again
-        </button>
-        {onNextChapter && (
-          <button
-            onClick={onNextChapter}
-            style={{
-              display: 'flex', alignItems: 'center', gap: 8,
-              padding: '12px 30px', borderRadius: 40,
-              background: '#FDD302', border: 'none',
-              fontSize: 17, fontWeight: 800, color: '#333',
-              fontFamily: 'inherit', cursor: 'pointer',
-            }}
-            onMouseEnter={e => (e.currentTarget.style.background = '#ffc700')}
-            onMouseLeave={e => (e.currentTarget.style.background = '#FDD302')}
-            onMouseDown={e => (e.currentTarget.style.transform = 'scale(0.96)')}
-            onMouseUp={e => (e.currentTarget.style.transform = 'scale(1)')}
-          >
-            Next Chapter <ChevronRight size={18} strokeWidth={3} />
-          </button>
-        )}
+        <GhostBtn onClick={onReset}><RotateCcw size={16} /> Play again</GhostBtn>
+        {onNextChapter && <PrimaryBtn onClick={onNextChapter}>Next Chapter <ChevronRight size={18} strokeWidth={3} /></PrimaryBtn>}
       </div>
     </div>
   )
 }
 
-// ─── Woohoo screen (ch3) ─────────────────────────────────────────────────────
 function WoohooScreen({ onReset, onNextChapter }: { onReset: () => void; onNextChapter?: () => void }) {
-  useLayoutEffect(() => {
-    const s = document.createElement('style')
-    s.textContent = '@keyframes shineText3{0%{background-position:200% center}100%{background-position:0% center}}'
-    document.head.appendChild(s)
-    return () => { document.head.removeChild(s) }
-  }, [])
   return (
-    <div style={{
-      height: '100dvh', display: 'flex', flexDirection: 'column',
-      alignItems: 'center', justifyContent: 'center', gap: 'clamp(20px, 4vw, 36px)',
-      background: '#fff',
-      fontFamily: '"Nunito Variable", Nunito, sans-serif',
-      userSelect: 'none',
-    }}>
-      <img
-        src={import.meta.env.BASE_URL + 'completion-ch3.gif'}
-        alt="Woohoo!"
-        style={{ width: 'clamp(180px, 50vw, 320px)', height: 'clamp(180px, 50vw, 320px)', borderRadius: 28, objectFit: 'cover' }}
-      />
-      <div style={{
-        fontSize: 'clamp(56px,8vw,96px)', fontWeight: 900, letterSpacing: -2,
-        background: 'linear-gradient(90deg, #5CCBF8 0%, #FDD302 30%, #F63664 60%, #5CCBF8 100%)',
-        backgroundSize: '300% auto',
-        WebkitBackgroundClip: 'text', WebkitTextFillColor: 'transparent',
-        backgroundClip: 'text',
-        animation: 'shineText3 2.8s linear infinite',
-      }}>
-        Woohoo!!!
-      </div>
+    <div style={completionScreenStyle}>
+      <img src={import.meta.env.BASE_URL + 'completion-ch3.gif'} alt="Woohoo!"
+        style={{ width: 'clamp(180px, 50vw, 320px)', height: 'clamp(180px, 50vw, 320px)', borderRadius: 28, objectFit: 'cover' }} />
+      <div style={{ ...shineTextStyle, background: 'linear-gradient(90deg, #5CCBF8 0%, #FDD302 30%, #F63664 60%, #5CCBF8 100%)', backgroundSize: '300% auto' }}>Woohoo!!!</div>
       <div style={{ display: 'flex', gap: 16, alignItems: 'center' }}>
-        <button
-          onClick={onReset}
-          style={{
-            display: 'flex', alignItems: 'center', gap: 8,
-            padding: '12px 30px', borderRadius: 40,
-            background: 'transparent', border: '2px solid #ccc',
-            fontSize: 17, fontWeight: 700, color: '#888',
-            fontFamily: 'inherit', cursor: 'pointer',
-          }}
-          onMouseEnter={e => { e.currentTarget.style.borderColor = '#aaa'; e.currentTarget.style.color = '#555' }}
-          onMouseLeave={e => { e.currentTarget.style.borderColor = '#ccc'; e.currentTarget.style.color = '#888' }}
-          onMouseDown={e => (e.currentTarget.style.transform = 'scale(0.96)')}
-          onMouseUp={e => (e.currentTarget.style.transform = 'scale(1)')}
-        >
-          <RotateCcw size={16} /> Play again
-        </button>
-        {onNextChapter && (
-          <button
-            onClick={onNextChapter}
-            style={{
-              display: 'flex', alignItems: 'center', gap: 8,
-              padding: '12px 30px', borderRadius: 40,
-              background: '#FDD302', border: 'none',
-              fontSize: 17, fontWeight: 800, color: '#333',
-              fontFamily: 'inherit', cursor: 'pointer',
-            }}
-            onMouseEnter={e => (e.currentTarget.style.background = '#ffc700')}
-            onMouseLeave={e => (e.currentTarget.style.background = '#FDD302')}
-            onMouseDown={e => (e.currentTarget.style.transform = 'scale(0.96)')}
-            onMouseUp={e => (e.currentTarget.style.transform = 'scale(1)')}
-          >
-            Next Chapter <ChevronRight size={18} strokeWidth={3} />
-          </button>
-        )}
+        <GhostBtn onClick={onReset}><RotateCcw size={16} /> Play again</GhostBtn>
+        {onNextChapter && <PrimaryBtn onClick={onNextChapter}>Next Chapter <ChevronRight size={18} strokeWidth={3} /></PrimaryBtn>}
       </div>
     </div>
   )
 }
 
-// ─── Amazing screen (ch4) ─────────────────────────────────────────────────────
 function AmazingScreen({ onReset }: { onReset: () => void }) {
-  useLayoutEffect(() => {
-    const s = document.createElement('style')
-    s.textContent = '@keyframes shineText4{0%{background-position:200% center}100%{background-position:0% center}} @keyframes popIn{0%{transform:scale(0) rotate(-20deg);opacity:0}60%{transform:scale(1.2) rotate(5deg);opacity:1}100%{transform:scale(1) rotate(0deg);opacity:1}}'
-    document.head.appendChild(s)
-    return () => { document.head.removeChild(s) }
-  }, [])
   return (
-    <div style={{
-      height: '100dvh', display: 'flex', flexDirection: 'column',
-      alignItems: 'center', justifyContent: 'center', gap: 'clamp(20px, 4vw, 36px)',
-      background: '#fff',
-      fontFamily: '"Nunito Variable", Nunito, sans-serif',
-      userSelect: 'none',
-    }}>
-      <div style={{ fontSize: 'clamp(80px, 18vw, 140px)', lineHeight: 1, animation: 'popIn 0.7s cubic-bezier(0.34,1.56,0.64,1) forwards' }}>
-        🏆
-      </div>
-      <div style={{
-        fontSize: 'clamp(56px,8vw,96px)', fontWeight: 900, letterSpacing: -2,
-        background: 'linear-gradient(90deg, #FDD302 0%, #F63664 30%, #5CCBF8 60%, #FDD302 100%)',
-        backgroundSize: '300% auto',
-        WebkitBackgroundClip: 'text', WebkitTextFillColor: 'transparent',
-        backgroundClip: 'text',
-        animation: 'shineText4 2.8s linear infinite',
-      }}>
-        Amazing!
-      </div>
-      <div style={{ fontSize: 18, color: '#888', fontWeight: 600 }}>
-        You beat me at Tic Tac Toe!
-      </div>
-      <button
-        onClick={onReset}
-        style={{
-          display: 'flex', alignItems: 'center', gap: 8,
-          padding: '12px 30px', borderRadius: 40,
-          background: 'transparent', border: '2px solid #ccc',
-          fontSize: 17, fontWeight: 700, color: '#888',
-          fontFamily: 'inherit', cursor: 'pointer',
-        }}
-        onMouseEnter={e => { e.currentTarget.style.borderColor = '#aaa'; e.currentTarget.style.color = '#555' }}
-        onMouseLeave={e => { e.currentTarget.style.borderColor = '#ccc'; e.currentTarget.style.color = '#888' }}
-        onMouseDown={e => (e.currentTarget.style.transform = 'scale(0.96)')}
-        onMouseUp={e => (e.currentTarget.style.transform = 'scale(1)')}
-      >
-        <RotateCcw size={16} /> Play again
-      </button>
+    <div style={completionScreenStyle}>
+      <div style={{ fontSize: 'clamp(80px, 18vw, 140px)', lineHeight: 1, animation: 'popIn 0.7s cubic-bezier(0.34,1.56,0.64,1) forwards' }}>🏆</div>
+      <div style={shineTextStyle}>Amazing!</div>
+      <div style={{ fontSize: 18, color: '#888', fontWeight: 600 }}>You beat me at Tic Tac Toe!</div>
+      <GhostBtn onClick={onReset}><RotateCcw size={16} /> Play again</GhostBtn>
     </div>
   )
 }
 
-// ─── Well Done screen ─────────────────────────────────────────────────────────
 function WellDone({ onReset, onNextChapter }: { onReset: () => void; onNextChapter: () => void }) {
-  useLayoutEffect(() => {
-    const s = document.createElement('style')
-    s.textContent = '@keyframes shineText{0%{background-position:200% center}100%{background-position:0% center}}'
-    document.head.appendChild(s)
-    return () => { document.head.removeChild(s) }
-  }, [])
   return (
-    <div style={{
-      height: '100dvh', display: 'flex', flexDirection: 'column',
-      alignItems: 'center', justifyContent: 'center', gap: 'clamp(20px, 4vw, 36px)',
-      background: '#fff',
-      fontFamily: '"Nunito Variable", Nunito, sans-serif',
-      userSelect: 'none',
-    }}>
-      <img
-        src={import.meta.env.BASE_URL + 'completion-ch1.gif'}
-        alt="Well done!"
-        style={{ maxWidth: 380, maxHeight: 340, width: '100%', borderRadius: 28, objectFit: 'contain', display: 'block' }}
-      />
-      <div style={{
-        fontSize: 'clamp(56px,8vw,96px)', fontWeight: 900, letterSpacing: -2,
-        background: 'linear-gradient(90deg, #FDD302 0%, #F63664 30%, #5CCBF8 60%, #FDD302 100%)',
-        backgroundSize: '300% auto',
-        WebkitBackgroundClip: 'text', WebkitTextFillColor: 'transparent',
-        backgroundClip: 'text',
-        animation: 'shineText 2.8s linear infinite',
-      }}>
-        Well done!
-      </div>
+    <div style={completionScreenStyle}>
+      <img src={import.meta.env.BASE_URL + 'completion-ch1.gif'} alt="Well done!"
+        style={{ maxWidth: 380, maxHeight: 340, width: '100%', borderRadius: 28, objectFit: 'contain', display: 'block' }} />
+      <div style={shineTextStyle}>Well done!</div>
       <div style={{ display: 'flex', gap: 16, alignItems: 'center' }}>
-        <button
-          onClick={onReset}
-          style={{
-            display: 'flex', alignItems: 'center', gap: 8,
-            padding: '10px 28px', borderRadius: 40,
-            background: 'transparent', border: '2px solid #ccc',
-            fontSize: 16, fontWeight: 700, color: '#888',
-            fontFamily: 'inherit', cursor: 'pointer',
-          }}
-          onMouseEnter={e => { e.currentTarget.style.borderColor = '#aaa'; e.currentTarget.style.color = '#555' }}
-          onMouseLeave={e => { e.currentTarget.style.borderColor = '#ccc'; e.currentTarget.style.color = '#888' }}
-        >
-          <RotateCcw size={16} /> Play again
-        </button>
-        <button
-          onClick={onNextChapter}
-          style={{
-            display: 'flex', alignItems: 'center', gap: 8,
-            padding: '14px 36px', borderRadius: 40,
-            background: '#FDD302', border: 'none',
-            fontSize: 20, fontWeight: 800, color: '#333',
-            fontFamily: 'inherit', cursor: 'pointer',
-          }}
-          onMouseEnter={e => (e.currentTarget.style.background = '#ffc700')}
-          onMouseLeave={e => (e.currentTarget.style.background = '#FDD302')}
-          onMouseDown={e => (e.currentTarget.style.transform = 'scale(0.96)')}
-          onMouseUp={e => (e.currentTarget.style.transform = 'scale(1)')}
-        >
-          Next Chapter <ChevronRight size={22} strokeWidth={3} />
-        </button>
+        <GhostBtn onClick={onReset}><RotateCcw size={16} /> Play again</GhostBtn>
+        <PrimaryBtn onClick={onNextChapter}>Next Chapter <ChevronRight size={22} strokeWidth={3} /></PrimaryBtn>
       </div>
     </div>
   )
 }
 
-// ─── Chapter 2 Page 2 — circle ───────────────────────────────────────────────
 type CirclePhase = 'roaming' | 'forming' | 'exploding'
 
 const MAX_CIRCLE_R = 180   // px starting radius
@@ -1840,8 +1586,6 @@ function Chapter2Page3() {
     }
   }, [active])   // eslint-disable-line react-hooks/exhaustive-deps
 
-  useEffect(() => () => { if (rafRef.current) cancelAnimationFrame(rafRef.current) }, [])
-
   function getPct(e: React.PointerEvent) {
     const rect = canvasRef.current?.getBoundingClientRect()
     if (!rect) return null
@@ -1921,10 +1665,7 @@ function Chapter2Page3() {
   )
 }
 
-// ─── Ch2 shared: shape builders + generic dot-connection page ────────────────
-
 // Scale/translate unit-space points [-1,1]² to canvas %-coords
-// ── Scale SVG vertices (from a 720×720 viewBox) to canvas % coords ────────────
 function svgToCanvas(
   pts: [number, number][], cw: number, ch: number, padFrac = 0.12
 ): { x: number; y: number }[] {
@@ -1953,7 +1694,6 @@ function isNeighbor(a: number, b: number, n: number, open = false) {
 }
 function edgeKey(a: number, b: number) { return `${Math.min(a, b)}-${Math.max(a, b)}` }
 
-// ── All available shapes (720×720 space) — pool for Ch2 dot-connection pages ──
 // Load shape SVGs from src/shapes/*.svg at build time (edit those files to add/change shapes)
 const _rawShapeSVGs = import.meta.glob('../shapes/*.svg', { query: '?raw', import: 'default', eager: true }) as Record<string, string>
 
@@ -1979,7 +1719,6 @@ const SHAPE_DEFS: ShapeDef[] = Object.keys(_rawShapeSVGs).sort().map(k => _parse
 const _usedShapeIndices = new Set<number>()
 
 function pickRandomShapes(n: number): ShapeDef[] {
-  // Build pool excluding already-used shapes; reset if not enough remain
   let pool = SHAPE_DEFS.map((s, i) => ({ s, i })).filter(({ i }) => !_usedShapeIndices.has(i))
   if (pool.length < n) {
     _usedShapeIndices.clear()
@@ -1995,7 +1734,6 @@ function pickRandomShapes(n: number): ShapeDef[] {
   return result
 }
 
-// ── Shape color palette matching SVG stroke colors ────────────────────────────
 const SHAPE_COLORS = {
   red:    '#FF383C',
   orange: '#FF8D28',
@@ -2012,7 +1750,6 @@ const COLOR_PALETTE: string[] = [
   SHAPE_COLORS.blue, SHAPE_COLORS.indigo, SHAPE_COLORS.purple,
 ]
 
-// ─── Generic Chapter 2 dot-connection page ───────────────────────────────────
 // Compatible with PhysDot so resolveCollisions works directly
 type P4Dot = { id: string; color: string; x: number; y: number; vx: number; vy: number; friction: number; vertexIdx?: number; targetX?: number; targetY?: number }
 type P4Phase = 'roaming' | 'forming' | 'interactive'
@@ -2042,12 +1779,10 @@ function Chapter2DotPage({ shapeColor, buildVertices, emoji, connectLabel, open 
   const [complete,   setComplete]   = useState(false)
   const drawnEdgesRef = useRef<Set<string>>(new Set())
 
-  // Edges for this shape — stable since buildVertices is a module-level function
   const nVerts     = useMemo(() => buildVertices(100, 100).length, [buildVertices]) // eslint-disable-line
   const shapeEdges = useMemo(() => open ? buildEdgesOpen(nVerts) : buildEdges(nVerts), [nVerts, open]) // eslint-disable-line
   const nEdges     = shapeEdges.length
 
-  // Persist dot positions so the next page picks up from here
   useEffect(() => {
     if (!complete) return
     handoff.current.ch2LatestDots = dotsRef.current.map(d => ({
@@ -2220,7 +1955,6 @@ function Chapter2DotPage({ shapeColor, buildVertices, emoji, connectLabel, open 
     }
   }, [active]) // eslint-disable-line react-hooks/exhaustive-deps
 
-  // Auto-select the start vertex when the page becomes interactive
   useEffect(() => {
     if (phase !== 'interactive') return
     const startDot = dotsRef.current.find(d => d.vertexIdx === 0)
@@ -2261,8 +1995,6 @@ function Chapter2DotPage({ shapeColor, buildVertices, emoji, connectLabel, open 
         )
         .map(([a, b]: [number,number]) => a === headVtx ? b : a)
     : []
-  // Enforce single forward direction: if both directions are open (only at start of closed shape),
-  // keep only the forward vertex (headVtx+1) % nVerts
   if (connArr.length > 1 && headVtx !== undefined) {
     const forward = (headVtx + 1) % nVerts
     const fwd = connArr.filter(v => v === forward)
@@ -2366,7 +2098,6 @@ function Chapter2DotPage({ shapeColor, buildVertices, emoji, connectLabel, open 
   )
 }
 
-// ── Per-slot wrapper components: read shape from context by slot index ────────
 // Must be module-level (stable identity) so React doesn't unmount/remount on re-render.
 function makeCh2DotPage(slotIdx: number): React.FC {
   return function Ch2DotSlot() {
@@ -2386,7 +2117,6 @@ function makeCh2DotPage(slotIdx: number): React.FC {
 }
 const Ch2DotSlots = Array.from({ length: 7 }, (_, i) => makeCh2DotPage(i))
 
-// ─── Shared Ch3 replay button ────────────────────────────────────────────────
 function Ch3ReplayBtn({ onClick }: { onClick: () => void }) {
   return (
     <button
@@ -2404,8 +2134,6 @@ function Ch3ReplayBtn({ onClick }: { onClick: () => void }) {
     </button>
   )
 }
-
-// ─── Chapter 3 Page 1 — Dot Runner ───────────────────────────────────────────
 
 /** Squared distance from point (px,py) to segment (ax,ay)→(bx,by). */
 function ptSegSq(px: number, py: number, ax: number, ay: number, bx: number, by: number): number {
@@ -2455,13 +2183,6 @@ function Ch3Page1({ winTarget = CH3_WIN, variant = 'normal' }: { winTarget?: num
   const jumpedRef   = useRef(0)            // mountains confirmed landed-after (on ground)
   const pendingRef  = useRef(0)            // mountains passed mid-air, not yet confirmed
 
-  useLayoutEffect(() => {
-    // Sun spin keyframe
-    const s = document.createElement('style')
-    s.textContent = '@keyframes ch3SunSpin{from{transform:rotate(0deg)}to{transform:rotate(360deg)}}'
-    document.head.appendChild(s)
-    return () => { document.head.removeChild(s) }
-  }, [])
 
   useLayoutEffect(() => {
     const el = outerRef.current; if (!el) return
@@ -2736,7 +2457,6 @@ function Ch3Page1({ winTarget = CH3_WIN, variant = 'normal' }: { winTarget?: num
   )
 }
 
-// ─── Chapter 3 Page 2: Dot Descent ───────────────────────────────────────────
 type C3P2Cloud = { x: number; w: number; ppSpeed?: number; ppMin?: number; ppMax?: number; ppDir?: number }
 type C3P2Floor = { id: number; worldY: number; clouds: C3P2Cloud[] }
 
@@ -2758,7 +2478,6 @@ let _c3p2Fid = 0
 /** Generate a row of 1–2 platforms whose centre tracks prevGroupCx. */
 function makeC3P2Floor(worldY: number, cw: number, prevGroupCx?: number, hard = false, ch = 0): C3P2Floor {
   const numClouds  = Math.random() < 0.45 ? 1 : 2
-  // On narrow portrait canvases (cw < ch) make clouds wider so the game stays playable
   const narrow     = ch > 0 && cw < ch
   const minCW      = Math.floor(cw * (narrow ? 0.28 : 0.16))
   const maxCW      = Math.floor(cw * (narrow ? 0.50 : 0.34))
@@ -2768,7 +2487,6 @@ function makeC3P2Floor(worldY: number, cw: number, prevGroupCx?: number, hard = 
   const gapBetween = numClouds > 1 ? ((narrow ? 30 : C3P2_GAP_W) + Math.random() * (narrow ? 20 : 60)) : 0
   const groupW     = widths.reduce((s, w) => s + w, 0) + gapBetween * (numClouds - 1)
 
-  // Constrain group centre so consecutive rows stay reachable
   const minGroupCx = groupW / 2 + 12
   const maxGroupCx = cw - groupW / 2 - 12
   let groupCx: number
@@ -2780,7 +2498,6 @@ function makeC3P2Floor(worldY: number, cw: number, prevGroupCx?: number, hard = 
   }
 
   const clouds: C3P2Cloud[] = []
-  // In hard mode: at most ONE cloud per row oscillates, chosen randomly
   const ppIdx = (hard && Math.random() < 0.4) ? Math.floor(Math.random() * numClouds) : -1
   let x = groupCx - groupW / 2
   for (let i = 0; i < numClouds; i++) {
@@ -2819,17 +2536,14 @@ function Ch3Page2({ winTarget = C3P2_WIN, variant = 'normal' }: { winTarget?: nu
   const lastTRef  = useRef(0)
   const [, tick]  = useState(0)
 
-  // Player (world coords)
   const pxRef         = useRef(480)
   const pyRef         = useRef(0)
   const vyRef         = useRef(0)
-  // Floors
   const floorsRef     = useRef<C3P2Floor[]>([])
   const onFloorRef    = useRef(-1)    // index of floor player stands on, -1 = airborne
   const collStartRef  = useRef(0)     // first floor index to check for landing
   const clearIdxRef   = useRef(0)     // next floor index to advance for clearing count
   const clearedRef    = useRef(0)
-  // Camera (world Y of top of screen; increases → things rise on screen)
   const camYRef       = useRef(0)
   // State
   const deadRef       = useRef(false)
@@ -2841,7 +2555,6 @@ function Ch3Page2({ winTarget = C3P2_WIN, variant = 'normal' }: { winTarget?: nu
 
   function initGame(cw: number, ch: number) {
     // Ball starts at screen centre, falling down onto first platform
-    // Camera: world 0 maps to screen centre → camY = -(ch/2)
     camYRef.current       = -(ch * 0.5)
     pxRef.current         = cw / 2
     pyRef.current         = 0          // world Y 0 → screen Y ch/2 (centre)
@@ -2907,7 +2620,6 @@ function Ch3Page2({ winTarget = C3P2_WIN, variant = 'normal' }: { winTarget?: nu
       const frames = dt * 60 / 1000
 
       if (!wonRef.current && !deadRef.current && startedRef.current) {
-        // ── 0. Ping-pong cloud update (hard mode) ────────────────────────────
         // Each moving cloud has its own direction; it reverses on wall hit OR
         // when it touches a neighbouring static cloud (which acts as a second wall).
         if (variant === 'hard') {
@@ -2947,11 +2659,9 @@ function Ch3Page2({ winTarget = C3P2_WIN, variant = 'normal' }: { winTarget?: nu
           }
         }
 
-        // ── 1. Horizontal movement ───────────────────────────────────────────
         const dx = (leftRef.current ? -1 : 0) + (rightRef.current ? 1 : 0)
         pxRef.current = Math.max(C3P2_R, Math.min(cw - C3P2_R, pxRef.current + dx * C3P2_SPD * frames))
 
-        // ── 2. On-floor: did player walk off every cloud? ───────────────────
         if (onFloorRef.current >= 0) {
           const floor = floorsRef.current[onFloorRef.current]
           if (!floor || !onAnyCloud(pxRef.current, floor)) {
@@ -2959,7 +2669,6 @@ function Ch3Page2({ winTarget = C3P2_WIN, variant = 'normal' }: { winTarget?: nu
           }
         }
 
-        // ── 3. Airborne: gravity + floor landing ─────────────────────────────
         if (onFloorRef.current < 0) {
           vyRef.current = Math.min(vyRef.current + C3P2_GRAV * frames, C3P2_MAX_VY)
           const prevY      = pyRef.current
@@ -2988,11 +2697,9 @@ function Ch3Page2({ winTarget = C3P2_WIN, variant = 'normal' }: { winTarget?: nu
           }
         }
 
-        // ── 5. Scroll camera upward (hard mode: speed increases with progress) ─
         const scrollSpd = variant === 'hard' ? Math.min(C3P2_SCROLL + clearedRef.current * 0.015, 1.4) : C3P2_SCROLL
         camYRef.current += scrollSpd * frames
 
-        // ── 6. Death: ball fell below bottom of screen ───────────────────────
         if (pyRef.current - C3P2_R > camYRef.current + ch) {
           deadRef.current = true
         }
@@ -3001,7 +2708,6 @@ function Ch3Page2({ winTarget = C3P2_WIN, variant = 'normal' }: { winTarget?: nu
           deadRef.current = true
         }
 
-        // ── 7. Extend floor pool ahead of camera ─────────────────────────────
         const last = floorsRef.current[floorsRef.current.length - 1]
         if (last && last.worldY < camYRef.current + ch * 2.2) {
           floorsRef.current.push(makeC3P2Floor(last.worldY + C3P2_SPACING, cw, floorGroupCx(last), variant === 'hard', ch))
@@ -3182,7 +2888,6 @@ function Ch3Page2({ winTarget = C3P2_WIN, variant = 'normal' }: { winTarget?: nu
   )
 }
 
-// ─── Chapter 3 Page 3: Tunnel Dot ────────────────────────────────────────────
 // Terrain is a continuous winding cave drawn on <canvas>.
 // Ceiling and floor are solid black polygons; the passage is the white gap.
 type C3P3Seg = { x: number; topY: number; botY: number }
@@ -3300,7 +3005,6 @@ function Ch3Page3({ winTarget = C3P3_WIN_DIST, variant = 'normal' }: { winTarget
       lastTRef.current = now
       const frames = dt * 60 / 1000
 
-      // ── Physics ─────────────────────────────────────────────────────────────
       if (runRef.current && !wonRef.current && !deadRef.current) {
         vyRef.current = Math.min(vyRef.current + C3P3_GRAV * frames, C3P3_MAX_VY)
         pyRef.current += vyRef.current * frames
@@ -3332,7 +3036,6 @@ function Ch3Page3({ winTarget = C3P3_WIN_DIST, variant = 'normal' }: { winTarget
         if (framesRef.current >= winTarget) wonRef.current = true
       }
 
-      // ── Draw ─────────────────────────────────────────────────────────────────
       const cv = cvRef.current
       if (cv) {
         const ctx = cv.getContext('2d')!
@@ -3468,8 +3171,6 @@ function Ch3Page3({ winTarget = C3P3_WIN_DIST, variant = 'normal' }: { winTarget
   )
 }
 
-// ─── Ch4 sound effects (Web Audio API — no external files) ───────────────────
-
 let _sfxCtx: AudioContext | null = null
 function getSfxCtx(): AudioContext | null {
   try {
@@ -3506,8 +3207,6 @@ function playSound(type: 'turn' | 'score' | 'win' | 'lose' | 'tie') {
   } catch {}
 }
 
-// ─── Ch4 shared layout utilities ─────────────────────────────────────────────
-
 const ch4CanvasStyle: React.CSSProperties = { ...canvasStyle, minWidth: 0 }
 
 function useWindowWidth(): number {
@@ -3530,8 +3229,6 @@ function useIsLandscape(): boolean {
   }, [])
   return ls
 }
-
-// ─── Ch4 shared components ────────────────────────────────────────────────────
 
 function TurnIndicator({ current, gameOver, mode, P_COLOR, isLandscape, scores, icons, labels, players = ['X', 'O'] }: {
   current: Player; gameOver: boolean; mode: TTTMode
@@ -3601,7 +3298,6 @@ function ModeSelector({ mode, onReset }: { mode: TTTMode; onReset: (m: TTTMode) 
   )
 }
 
-
 function PlayerCountControl({ count, onChange, isLandscape }: { count: number; onChange: (n: 2 | 3) => void; isLandscape: boolean }) {
   const is3 = count >= 3
   return (
@@ -3630,7 +3326,6 @@ function nextTurn(cur: Player, numPlayers: 2 | 3): Player {
   return cur === 'X' ? 'O' : cur === 'O' ? 'Y' : 'X'
 }
 
-// ─── Ch4 shared SVG grid constants (same scale across all pages) ──────────────
 const CH4_DOT_R    = 4.5  // dot radius (viewBox units, same scale as DB)
 const CH4_DOT_SEL  = 6.75 // selected dot radius
 const DB_HIT_R     = 28   // invisible touch-target radius for DotsAndBoxes dots (~35% of cell)
@@ -3639,7 +3334,6 @@ const CH4_LW_E     = 2    // empty grid line stroke-width
 const CH4_VB_PAD   = 40   // viewBox padding
 const CH4_VB_CELL  = 80   // cell size in viewBox units
 
-// ─── Chapter 4 Page 1 — Tic Tac Toe ─────────────────────────────────────────
 type TTTCell = null | 'X' | 'O'
 type TTTStatus = 'playing' | 'x-wins' | 'o-wins' | 'draw'
 
@@ -3742,8 +3436,6 @@ function ch4Caption(name: string, desc: string, onShowRules: () => void): React.
     <><span style={{ fontWeight: 700 }}>{name}:</span> {punctuated}{' '}<ShowRulesButton onClick={onShowRules} /></>
   )
 }
-
-// ── Step-by-step diagram helpers for rules modals ───────────────────────────
 
 function RuleSteps({ steps }: { steps: { svg: React.ReactNode; label: string }[] }) {
   return (
@@ -3862,40 +3554,6 @@ function DtDiagram({ edges = [], tris = [] }: {
   )
 }
 
-// RectangleGame snapshot — 3×3 dot grid
-// rects = [[r1, c1, r2, c2, player]] → placed rectangles
-// draftRect = [r1, c1, r2, c2] → in-progress drag preview
-function RgDiagram({ rects = [], draftRect }: {
-  rects?: Array<[number, number, number, number, 'X' | 'O']>
-  draftRect?: [number, number, number, number]
-}) {
-  const dx = (c: number) => 15 + c * 30
-  const dy = (r: number) => 15 + r * 30
-  return (
-    <svg viewBox="0 0 90 90" style={{ width: '100%', height: '100%', display: 'block' }}>
-      <rect width={90} height={90} fill="#fafaf8"/>
-      {rects.map(([r1, c1, r2, c2, p], i) => {
-        const x = Math.min(dx(c1), dx(c2)), y = Math.min(dy(r1), dy(r2))
-        const w = Math.abs(dx(c2) - dx(c1)), h = Math.abs(dy(r2) - dy(r1))
-        return <rect key={i} x={x} y={y} width={w} height={h}
-          fill={p === 'X' ? '#5b9bd520' : '#e0525220'}
-          stroke={p === 'X' ? '#5b9bd5' : '#e05252'} strokeWidth={2} rx={2}/>
-      })}
-      {draftRect && (() => {
-        const [r1, c1, r2, c2] = draftRect
-        const x = Math.min(dx(c1), dx(c2)), y = Math.min(dy(r1), dy(r2))
-        const w = Math.abs(dx(c2) - dx(c1)), h = Math.abs(dy(r2) - dy(r1))
-        return <rect x={x} y={y} width={w} height={h}
-          fill="none" stroke="#5b9bd5aa" strokeWidth={1.8} strokeDasharray="5 3" rx={2}/>
-      })()}
-      {[0, 1, 2].flatMap(r => [0, 1, 2].map(c => (
-        <circle key={`d${c}${r}`} cx={dx(c)} cy={dy(r)} r={3.5} fill="#bbb"/>
-      )))}
-    </svg>
-  )
-}
-
-// CatMouse snapshot — pentagon + center graph
 const _CM_DEMO_NODES = [
   { x: 45, y: 10 }, // 0 top
   { x: 74, y: 31 }, // 1 upper-right
@@ -4059,7 +3717,7 @@ function TicTacToePage() {
   const tttCaption = useMemo(() => ch4Caption('Tic-tac-toe', 'Take turns placing pieces — get three in a row to win!', () => setRulesOpen(true)), [])
 
   const TTT_N  = 3
-  const TTT_VB = 2 * CH4_VB_PAD + TTT_N * CH4_VB_CELL   // 320
+  const TTT_VB = 2 * CH4_VB_PAD + TTT_N * CH4_VB_CELL
   const tttDp  = (r: number, c: number) => ({ x: CH4_VB_PAD + c * CH4_VB_CELL, y: CH4_VB_PAD + r * CH4_VB_CELL })
   const PIECE_R = CH4_VB_CELL * 0.28
 
@@ -4196,15 +3854,14 @@ function TicTacToePage() {
   )
 }
 
-// ─── Chapter 4 / Page 2: Dots and Boxes ──────────────────────────────────────
 const DB_N       = 4                           // 4×4 = 16 boxes
-const DB_VB_PAD  = CH4_VB_PAD                  // = 40
-const DB_VB_CELL = CH4_VB_CELL                 // = 80
-const DB_VB      = 2 * DB_VB_PAD + DB_N * DB_VB_CELL  // = 480
-const DB_DOT_R   = CH4_DOT_R                   // = 6
-const DB_DOT_SEL = CH4_DOT_SEL                 // = 9
+const DB_VB_PAD  = CH4_VB_PAD
+const DB_VB_CELL = CH4_VB_CELL
+const DB_VB      = 2 * DB_VB_PAD + DB_N * DB_VB_CELL
+const DB_DOT_R   = CH4_DOT_R
+const DB_DOT_SEL = CH4_DOT_SEL
 const DB_LW      = 5                           // drawn line stroke-width
-const DB_LW_E    = CH4_LW_E                    // = 2
+const DB_LW_E    = CH4_LW_E
 
 // ViewBox position of dot (row, col)
 const dbDp = (r: number, c: number) => ({
@@ -4618,7 +4275,6 @@ function DotsAndBoxesPage() {
   )
 }
 
-// ─── Shell ────────────────────────────────────────────────────────────────────
 const CHAPTER1_PAGES = [Page1, Page23, Page4, Page56, Page7, Page8, Page9, Page10, Page11]
 const CHAPTER2_PAGES = [Chapter2Page1, Chapter2Page3, ...Ch2DotSlots]
 function Ch3Page1L2() { return <Ch3Page1 winTarget={CH3_WIN2} /> }
@@ -4629,7 +4285,6 @@ function Ch3Page2L3() { return <Ch3Page2 winTarget={C3P2_WIN3} variant="hard" />
 function Ch3Page3L3() { return <Ch3Page3 winTarget={C3P3_WIN_DIST3} variant="hard" /> }
 
 const CHAPTER3_PAGES = [Ch3Page1, Ch3Page1L2, Ch3Page1L3, Ch3Page2, Ch3Page2L2, Ch3Page2L3, Ch3Page3, Ch3Page3L2, Ch3Page3L3]
-// ─── Chapter 4 / Page 3: Dot Triangles ────────────────────────────────────────
 
 const DT_VB   = 300   // SVG viewBox size
 const DT_PAD  = 20    // padding inside viewBox
@@ -5078,280 +4733,15 @@ function DotTrianglesPage() {
   )
 }
 
-// ─── Chapter 4 / Page 4: Rectangle Game ──────────────────────────────────────
-
-const RG_N   = 5                          // NxN cells, (N+1)x(N+1) dots
-const RG_PAD = 10                         // SVG viewBox padding
-const RG_CELL = (100 - 2 * RG_PAD) / RG_N
-
-function rgPos(r: number, c: number) {
-  return { x: RG_PAD + c * RG_CELL, y: RG_PAD + r * RG_CELL }
-}
-
-function rgNearestDot(pt: { x: number; y: number }) {
-  const c = Math.round((pt.x - RG_PAD) / RG_CELL)
-  const r = Math.round((pt.y - RG_PAD) / RG_CELL)
-  return { r: Math.max(0, Math.min(RG_N, r)), c: Math.max(0, Math.min(RG_N, c)) }
-}
-
-function rgRectSegs(r1: number, c1: number, r2: number, c2: number) {
-  const h: string[] = [], v: string[] = []
-  for (let c = c1; c < c2; c++) { h.push(`${r1},${c}`); h.push(`${r2},${c}`) }
-  for (let r = r1; r < r2; r++) { v.push(`${r},${c1}`); v.push(`${r},${c2}`) }
-  return { h, v }
-}
-
-function rgIsValid(r1: number, c1: number, r2: number, c2: number, hUsed: Set<string>, vUsed: Set<string>) {
-  if (r1 >= r2 || c1 >= c2) return false
-  const { h, v } = rgRectSegs(r1, c1, r2, c2)
-  return h.every(s => !hUsed.has(s)) && v.every(s => !vUsed.has(s))
-}
-
-function rgAllValid(hUsed: Set<string>, vUsed: Set<string>): Array<[number, number, number, number]> {
-  const moves: Array<[number, number, number, number]> = []
-  for (let r1 = 0; r1 <= RG_N; r1++)
-    for (let c1 = 0; c1 <= RG_N; c1++)
-      for (let r2 = r1 + 1; r2 <= RG_N; r2++)
-        for (let c2 = c1 + 1; c2 <= RG_N; c2++)
-          if (rgIsValid(r1, c1, r2, c2, hUsed, vUsed))
-            moves.push([r1, c1, r2, c2])
-  return moves
-}
-
-function RectangleGamePage() {
-  const isLandscape = useIsLandscape()
-  const [mode,    setMode]    = useState<TTTMode>('computer')
-  const [hUsed,   setHUsed]   = useState<Set<string>>(new Set())
-  const [vUsed,   setVUsed]   = useState<Set<string>>(new Set())
-  const [rects,   setRects]   = useState<Array<{ r1: number; c1: number; r2: number; c2: number; player: 'X' | 'O' }>>([])
-  const [current, setCurrent] = useState<'X' | 'O'>('X')
-  const [gameOver, setGameOver] = useState(false)
-  const [winner,  setWinner]  = useState<'X' | 'O' | null>(null)
-  const [rulesOpen, setRulesOpen] = useState(false)
-  const [dragStart, setDragStart] = useState<{ r: number; c: number } | null>(null)
-  const [dragCur,   setDragCur]   = useState<{ r: number; c: number } | null>(null)
-  const svgRef = useRef<SVGSVGElement>(null)
-  const P_COLOR: Record<'X' | 'O', string> = { X: BLUE, O: RED }
-
-  function commitRect(r1: number, c1: number, r2: number, c2: number, who: 'X' | 'O' = current) {
-    if (!rgIsValid(r1, c1, r2, c2, hUsed, vUsed)) return
-    if (who === 'X') sfxUnlock()
-    const { h, v } = rgRectSegs(r1, c1, r2, c2)
-    const newH = new Set(hUsed); h.forEach(s => newH.add(s))
-    const newV = new Set(vUsed); v.forEach(s => newV.add(s))
-    const newRects = [...rects, { r1, c1, r2, c2, player: who }]
-    setHUsed(newH); setVUsed(newV); setRects(newRects)
-    setDragStart(null); setDragCur(null)
-    const next: 'X' | 'O' = who === 'X' ? 'O' : 'X'
-    if (rgAllValid(newH, newV).length === 0) {
-      setGameOver(true); setWinner(who)   // next player can't move → current wins
-      playSound(who === 'X' ? (mode === 'computer' ? 'win' : 'win') : (mode === 'computer' ? 'lose' : 'win'))
-    } else {
-      setCurrent(next)
-      playSound('turn')
-    }
-  }
-
-  function resetGame(m: TTTMode = mode) {
-    setMode(m); setHUsed(new Set()); setVUsed(new Set()); setRects([])
-    setCurrent('X'); setGameOver(false); setWinner(null)
-    setDragStart(null); setDragCur(null)
-  }
-
-  // Computer (O) move
-  useEffect(() => {
-    if (mode !== 'computer' || current !== 'O' || gameOver) return
-    const moves = rgAllValid(hUsed, vUsed)
-    if (moves.length === 0) { setGameOver(true); setWinner('X'); return }
-    const t = setTimeout(() => {
-      const pick = moves[Math.floor(Math.random() * moves.length)]
-      commitRect(pick[0], pick[1], pick[2], pick[3], 'O')
-    }, 550)
-    return () => clearTimeout(t)
-  }, [mode, current, gameOver, hUsed, vUsed])
-
-  function toSVGPt(e: React.PointerEvent) {
-    const svg = svgRef.current; if (!svg) return null
-    const p = svg.createSVGPoint(); p.x = e.clientX; p.y = e.clientY
-    return p.matrixTransform(svg.getScreenCTM()!.inverse())
-  }
-
-  const isHumanTurn = !gameOver && (mode === 'two-player' || current === 'X')
-
-  // Normalised preview rectangle
-  const previewRect = dragStart && dragCur && !(dragStart.r === dragCur.r && dragStart.c === dragCur.c)
-    ? { r1: Math.min(dragStart.r, dragCur.r), c1: Math.min(dragStart.c, dragCur.c),
-        r2: Math.max(dragStart.r, dragCur.r), c2: Math.max(dragStart.c, dragCur.c) }
-    : null
-  const previewValid = previewRect
-    ? rgIsValid(previewRect.r1, previewRect.c1, previewRect.r2, previewRect.c2, hUsed, vUsed)
-    : false
-
-  const svgBoard = (
-    <svg ref={svgRef} viewBox="0 0 100 100"
-      style={{ width: '100%', aspectRatio: '1 / 1', maxHeight: '100%', touchAction: 'none', overflow: 'visible' }}
-      onPointerMove={e => {
-        if (!dragStart) return
-        const pt = toSVGPt(e); if (pt) setDragCur(rgNearestDot(pt))
-      }}
-      onPointerUp={e => {
-        if (!dragStart || !isHumanTurn) { setDragStart(null); setDragCur(null); return }
-        const pt = toSVGPt(e)
-        if (pt) {
-          const end = rgNearestDot(pt)
-          if (end.r !== dragStart.r && end.c !== dragStart.c) {
-            const r1 = Math.min(dragStart.r, end.r), c1 = Math.min(dragStart.c, end.c)
-            const r2 = Math.max(dragStart.r, end.r), c2 = Math.max(dragStart.c, end.c)
-            commitRect(r1, c1, r2, c2)
-            return
-          }
-        }
-        setDragStart(null); setDragCur(null)
-      }}
-      onPointerLeave={() => { setDragStart(null); setDragCur(null) }}
-    >
-      {/* Grid background lines */}
-      {Array.from({ length: RG_N + 1 }, (_, r) =>
-        Array.from({ length: RG_N }, (_, c) => {
-          const p1 = rgPos(r, c), p2 = rgPos(r, c + 1)
-          return <line key={`h${r},${c}`} x1={p1.x} y1={p1.y} x2={p2.x} y2={p2.y}
-            stroke="#ddd" strokeWidth={0.5} />
-        })
-      )}
-      {Array.from({ length: RG_N }, (_, r) =>
-        Array.from({ length: RG_N + 1 }, (_, c) => {
-          const p1 = rgPos(r, c), p2 = rgPos(r + 1, c)
-          return <line key={`v${r},${c}`} x1={p1.x} y1={p1.y} x2={p2.x} y2={p2.y}
-            stroke="#ddd" strokeWidth={0.5} />
-        })
-      )}
-
-      {/* Drawn rectangles */}
-      {rects.map((rect, i) => {
-        const tl = rgPos(rect.r1, rect.c1), br = rgPos(rect.r2, rect.c2)
-        return <rect key={i} x={tl.x} y={tl.y} width={br.x - tl.x} height={br.y - tl.y}
-          fill="none" stroke={P_COLOR[rect.player]} strokeWidth={1} strokeLinejoin="round" />
-      })}
-
-      {/* Preview rectangle */}
-      {previewRect && (() => {
-        const tl = rgPos(previewRect.r1, previewRect.c1), br = rgPos(previewRect.r2, previewRect.c2)
-        return <rect x={tl.x} y={tl.y} width={br.x - tl.x} height={br.y - tl.y}
-          fill={previewValid ? P_COLOR[current] + '14' : 'none'}
-          stroke={P_COLOR[current] + (previewValid ? 'cc' : '44')}
-          strokeWidth={previewValid ? 1 : 0.5}
-          strokeDasharray={previewValid ? undefined : '4 3'}
-          strokeLinejoin="round" />
-      })()}
-
-      {/* Invisible hit-area dots for drag start */}
-      {Array.from({ length: RG_N + 1 }, (_, r) =>
-        Array.from({ length: RG_N + 1 }, (_, c) => {
-          const { x, y } = rgPos(r, c)
-          return <circle key={`d${r},${c}`} cx={x} cy={y}
-            r={5} fill="transparent"
-            style={{ cursor: isHumanTurn ? 'crosshair' : 'default' }}
-            onPointerDown={e => {
-              if (!isHumanTurn) return
-              e.currentTarget.setPointerCapture(e.pointerId)
-              setDragStart({ r, c }); setDragCur({ r, c })
-            }}
-          />
-        })
-      )}
-    </svg>
-  )
-
-  const rgWinnerLabel = winner
-    ? (mode === 'computer' ? (winner === 'X' ? 'You win! 🎉' : 'I win! 😄') : (winner === 'X' ? 'Blue wins! 🎉' : 'Red wins!'))
-    : ''
-  const gameOverBanner = gameOver && winner ? (
-    <Ch4GameOverBanner
-      winnerLabel={rgWinnerLabel}
-      winnerColor={P_COLOR[winner]}
-    />
-  ) : null
-
-  const modeSelector = <ModeSelector mode={mode} onReset={resetGame} />
-  const turnIndicator = <TurnIndicator current={current} gameOver={gameOver} mode={mode} P_COLOR={P_COLOR} isLandscape={isLandscape} />
-  // eslint-disable-next-line react-hooks/exhaustive-deps
-  const rgCaption = useMemo(() => ch4Caption('Rectangle Game', 'Drag to draw a rectangle — the last player to place one wins!', () => setRulesOpen(true)), [])
-  const rgRules = (
-    <>
-      <RuleSteps steps={[
-        {
-          svg: <RgDiagram />,
-          label: 'Dot grid — drag between dots',
-        },
-        {
-          svg: <RgDiagram draftRect={[0,0,1,2]}/>,
-          label: 'Any two diagonal dots',
-        },
-        {
-          svg: <RgDiagram
-            rects={[[0,0,1,2,'X'],[1,0,2,1,'O']]}/>,
-          label: 'Last valid move wins!',
-        },
-      ]}/>
-      <p style={{ margin: '0 0 10px' }}>Players take turns drawing a rectangle by dragging from one dot to another (diagonal).</p>
-      <p style={{ margin: '0 0 10px' }}>A rectangle is valid only if its edges <b>don't overlap</b> any previously drawn edges.</p>
-      <p style={{ margin: 0 }}>The player who makes the <b>last valid move</b> wins. Blue goes first.</p>
-    </>
-  )
-
-  if (isLandscape) {
-    return (
-      <>
-        <div style={{ ...ch4CanvasStyle, flex: 1, display: 'flex', flexDirection: 'row', overflow: 'hidden' }}>
-          <Ch4PlayAgainBtn show={gameOver} onClick={resetGame} />
-          <div style={{ flexShrink: 0, display: 'flex', flexDirection: 'column', alignItems: 'flex-start', justifyContent: 'space-between', padding: '24px 20px' }}>
-            {gameOver ? gameOverBanner : turnIndicator}
-            {modeSelector}
-          </div>
-          <div style={{ flex: 1, minHeight: 0, display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 24, boxSizing: 'border-box' }}>
-            {svgBoard}
-          </div>
-        </div>
-        <IntroText>{rgCaption}</IntroText>
-        <SetDone celebrate={false} done={gameOver} />
-        {rulesOpen && <Ch4RulesModal title="How to play Rectangle Game" onClose={() => setRulesOpen(false)}>{rgRules}</Ch4RulesModal>}
-      </>
-    )
-  }
-
-  return (
-    <>
-      <div style={{ ...ch4CanvasStyle, flex: 1, display: 'flex', flexDirection: 'column', overflow: 'hidden', justifyContent: 'center' }}>
-          <Ch4PlayAgainBtn show={gameOver} onClick={resetGame} />
-        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', padding: '0 16px', height: 60, flexShrink: 0 }}>
-          {gameOver ? gameOverBanner : turnIndicator}
-        </div>
-        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 20, boxSizing: 'border-box' }}>
-          {svgBoard}
-        </div>
-        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', padding: '0 16px', height: 48, flexShrink: 0 }}>
-          {modeSelector}
-        </div>
-      </div>
-      <IntroText>{rgCaption}</IntroText>
-      <SetDone celebrate={false} done={gameOver} />
-      {rulesOpen && <Ch4RulesModal title="How to play Rectangle Game" onClose={() => setRulesOpen(false)}>{rgRules}</Ch4RulesModal>}
-    </>
-  )
-}
-
-// ─── Chapter 4 / Page 5: 鸡毛蒜皮 ────────────────────────────────────────────
 const JMSP_ROWS  = 4
 const JMSP_COLS  = 4
 const JMSP_STEPS = 3
 const JMSP_VB_PAD = 30
 const JMSP_CELL   = 70
-const JMSP_VB_W   = 2 * JMSP_VB_PAD + (JMSP_COLS - 1) * JMSP_CELL  // 270
-const JMSP_VB_H   = 2 * JMSP_VB_PAD + (JMSP_ROWS - 1) * JMSP_CELL  // 270
+const JMSP_VB_W   = 2 * JMSP_VB_PAD + (JMSP_COLS - 1) * JMSP_CELL
+const JMSP_VB_H   = 2 * JMSP_VB_PAD + (JMSP_ROWS - 1) * JMSP_CELL
 const JMSP_PR     = 15  // piece radius
 
-// Cross-shaped board: the 5 cells from the reference SVG form a plus sign.
-// Valid nodes are the corners/intersections of those cells.
 const JMSP_VALID = new Set<string>([
   '0,1','0,2',
   '1,0','1,1','1,2','1,3',
@@ -5362,7 +4752,6 @@ function jmspIsValid(r: number, c: number): boolean {
   return JMSP_VALID.has(`${r},${c}`)
 }
 
-// The 5 cells as (topLeftRow, topLeftCol) — each cell spans one JMSP_CELL square
 const JMSP_CELLS = [
   {r:0, c:1},  // top
   {r:1, c:0},  // left
@@ -5747,8 +5136,6 @@ function JmspPage() {
   )
 }
 
-// ─── Chapter 4 / Page 4: Cat and Mouse ────────────────────────────────────────
-
 // Pentagon + center graph (6 nodes)
 const CM_NODES = [
   { x: 50, y: 18 },  // 0 top          → 🐱 cat starts
@@ -5931,7 +5318,6 @@ function CatMousePage() {
   const validMoves  = isHumanTurn ? CM_ADJ[humanPos] : []
   const NR = 5 // node radius in SVG viewBox units (smaller)
 
-  // ── SVG board ──────────────────────────────────────────────────────────────
   const svgBoard = (
     <svg
       ref={svgRef}
@@ -6009,7 +5395,6 @@ function CatMousePage() {
     </svg>
   )
 
-  // ── Game-over banner ──────────────────────────────────────────────────────
   const cmWinnerLabel = mode === 'computer'
     ? (computerIsCat ? 'I win! 😄' : 'You win! 🎉')
     : 'Cop wins! 🎉'
@@ -6087,8 +5472,6 @@ function CatMousePage() {
 
 const CHAPTER4_PAGES: React.ComponentType[] = [TicTacToePage, DotsAndBoxesPage, DotTrianglesPage, CatMousePage, JmspPage]
 
-// ─── Chapter 5 ───────────────────────────────────────────────────────────────
-
 // Shared layout constants
 const CS_CELL  = 48   // SVG units per cell
 const CS_PAD   = 20   // viewBox padding
@@ -6099,7 +5482,6 @@ const CS_VB6   = 2 * CS_PAD + 6 * CS_CELL  // p3 viewBox size (328) — dot-size
 const CS4_COLORS = [BLUE, RED, YELLOW, '#50C878']                            // 4 colors (pages 1 & 2)
 const CS6_COLORS = [BLUE, RED, YELLOW, '#50C878', '#AF7AC5', '#FF8C42']      // 6 colors (page 3)
 
-// ── Page 1: Two independent 2×2 boxes, each missing 1 dot ────────────────────
 // Colors: CS4_COLORS = [BLUE(0), RED(1), YELLOW(2), GREEN(3)]
 // Box A: blue(0,0), [empty→RED](0,1), YELLOW(1,0), GREEN(1,1)
 // Box B: blue(0,0), RED(0,1), [empty→YELLOW](1,0), GREEN(1,1)
@@ -6108,7 +5490,6 @@ const CS1_GIVEN_B: (number | null)[][] = [[0, 1],    [null, 3]]
 const CS1_BOX_GAP = 16                                      // gap between the two 2×2 boxes (SVG units)
 const CS1_BOX_VB  = 2 * CS_CELL + 2 * CS_PAD               // compact viewBox per box: 136 SVG units
 
-// ── Page 2: 4×4 board, 4 colors ───────────────────────────────────────────────
 // Solution: every row, col, and 2×2 box has each of 0-3 exactly once.
 const CS4_SOL: number[][] = [
   [0, 1, 2, 3],
@@ -6123,7 +5504,6 @@ const CS4_PUZZLE: (number | null)[][] = [
   [null, 2,    null, 0   ],
 ]
 
-// ── Page 3: 6×6 board, 6 colors ───────────────────────────────────────────────
 // Solution: every row, col, and 2×3 box has each of 0-5 exactly once.
 const CS6_SOL: number[][] = [
   [0, 1, 2, 3, 4, 5],
@@ -6170,6 +5550,26 @@ function csConflict(board: (number | null)[][], r: number, c: number,
       if ((rr !== r || cc !== c) && board[rr][cc] === v) return true
     }
   return false
+}
+
+// Returns true if the board can still be completed (backtracking solver).
+// Mutates board in place but always restores it — caller should pass a copy.
+function csSolvable(board: (number | null)[][], size: number, boxH: number, boxW: number): boolean {
+  for (let r = 0; r < size; r++) {
+    for (let c = 0; c < size; c++) {
+      if (board[r][c] !== null) continue
+      for (let v = 0; v < size; v++) {
+        board[r][c] = v
+        if (!csConflict(board, r, c, size, boxH, boxW) && csSolvable(board, size, boxH, boxW)) {
+          board[r][c] = null
+          return true
+        }
+      }
+      board[r][c] = null
+      return false
+    }
+  }
+  return true  // no empty cell found → complete
 }
 
 function ColorSudokuPage({ cfg }: { cfg: CSCfg }) {
@@ -6270,11 +5670,12 @@ function ColorSudokuPage({ cfg }: { cfg: CSCfg }) {
     const onUp = (e: PointerEvent) => {
       const sc = toSvgCoords(e.clientX, e.clientY)
       const cell = sc ? cellAt(sc.x, sc.y) : null
-      const valid = cell !== null && !isFixed(cell.r, cell.c) && board[cell.r][cell.c] === null
+      const cellOk = cell !== null && !isFixed(cell.r, cell.c) && board[cell.r][cell.c] === null
+      const next = cellOk ? board.map(row => [...row]) : null
+      if (next) next[cell!.r][cell!.c] = dragColorIdx
+      const valid = cellOk && csSolvable(next!, size, boxH, boxW)
       if (valid) {
-        const next = board.map(row => [...row])
-        next[cell!.r][cell!.c] = dragColorIdx
-        setBoard(next)
+        setBoard(next!)
         setLastPlaced({ r: cell!.r, c: cell!.c })
         // Compute cell center in screen coords for fly animation
         const boardEl = boardSqRef.current
@@ -6546,8 +5947,6 @@ function ColorSudokuPage({ cfg }: { cfg: CSCfg }) {
   )
 }
 
-// ── Per-difficulty wrappers ───────────────────────────────────────────────────
-
 const CS4_CFG: CSCfg = {
   size: 4, colors: CS4_COLORS, boxH: 2, boxW: 2,
   solution: CS4_SOL, puzzle: CS4_PUZZLE,
@@ -6561,7 +5960,6 @@ const CS6_CFG: CSCfg = {
   caption: <><b>Color Sudoku:</b> Fill the 6×6 grid so each row, column &amp; 2×3 box has all 6 colors!</>,
 }
 
-// ── CS1Page: two independent 2×2 boxes, drag-to-fill with shared tray ─────────
 function CS1Page() {
   const isLandscape = useIsLandscape()
   const colors = CS4_COLORS
@@ -6713,7 +6111,6 @@ function CS1Page() {
     return () => { window.removeEventListener('pointermove', onMove); window.removeEventListener('pointerup', onUp) }
   }, [dragColorIdx, boardA, boardB, isLandscape]) // eslint-disable-line react-hooks/exhaustive-deps
 
-  // ── SVG: two 2×2 boxes (portrait = stacked, landscape = side by side) ──────
   const svgBoard = (
     <svg ref={svgRef} viewBox={`0 0 ${VW} ${VH}`}
       style={{ width: '100%', height: '100%', display: 'block', touchAction: 'none' }}
@@ -6778,7 +6175,6 @@ function CS1Page() {
     </svg>
   )
 
-  // ── Ghost / error-flash / fly-dot visuals ───────────────────────────────────
   const ghostDot = dragColorIdx !== null && dragPt && (
     <div style={{
       position: 'fixed', left: dragPt.x - TRAY_PD/2, top: dragPt.y - TRAY_PD/2,
@@ -6814,7 +6210,6 @@ function CS1Page() {
     </>
   )
 
-  // ── Tray panel ──────────────────────────────────────────────────────────────
   const trayDot = (colorIdx: number) => {
     const color = colors[colorIdx]
     const count = remaining[colorIdx]
@@ -6861,7 +6256,6 @@ function CS1Page() {
     )
   }
 
-  // ── Misplaced X overlays (one per box) ──────────────────────────────────────
   const boxConflicted = (board: (number | null)[][], pos: { r: number; c: number } | null) => {
     if (!pos) return false
     const val = board[pos.r]?.[pos.c]
@@ -6994,9 +6388,7 @@ function CS4Page() {
 }
 function CS6Page() { return <ColorSudokuPage cfg={CS6_CFG} /> }
 
-// ── Page 4: Look-and-Find ─────────────────────────────────────────────────────
 // Each tile shows 2 stacked dots. Find all tiles that match the prompt.
-// ─── Look-and-Find shared layer (Ch5 P4 / P5 / P6) ──────────────────────────
 
 const LAF_GREEN = '#50C878'
 const LAF_PAL2  = [RED, BLUE] as const
@@ -7312,7 +6704,320 @@ function LookAndFindP6() {
   return <LookAndFind colors={LAF_PAL3} cols={5} rows={3} numRounds={3} dotCount={4} flipPrompt />
 }
 
-const CHAPTER5_PAGES: React.ComponentType[] = [CS1Page, CS4Page, CS6Page, LookAndFindP4, LookAndFindP5, LookAndFindP6]
+const MJ_IMGS = [mj1, mj2, mj3, mj4, mj5, mj6, mj7, mj8, mj9]
+
+type MjTile = { id: number; type: number; removed: boolean }
+
+function MahjongPage() {
+  const active = useContext(PageActiveCtx)
+
+  const newGame = (): MjTile[] =>
+    Array.from({ length: 9 }, (_, t) => [t, t]).flat()   // 2 of each = 18 tiles
+      .sort(() => Math.random() - 0.5)
+      .map((type, id) => ({ id, type, removed: false }))
+
+  const [tiles,    setTiles]    = useState<MjTile[]>(() => newGame())
+  const [selected, setSelected] = useState<number | null>(null)  // tile id
+  const [matching, setMatching] = useState<ReadonlySet<number>>(new Set())  // ids being removed
+
+  useEffect(() => {
+    if (active) { setTiles(newGame()); setSelected(null); setMatching(new Set()) }
+  }, [active])  // eslint-disable-line react-hooks/exhaustive-deps
+
+  const won = tiles.length > 0 && tiles.every(t => t.removed)
+
+  const tap = (id: number) => {
+    if (!active || won || matching.has(id)) return
+    const tile = tiles.find(t => t.id === id)
+    if (!tile || tile.removed) return
+
+    if (selected === null) {
+      setSelected(id)
+    } else if (selected === id) {
+      setSelected(null)               // deselect
+    } else {
+      const prev = tiles.find(t => t.id === selected)
+      if (prev && !prev.removed && prev.type === tile.type) {
+        // Match! Animate then remove
+        const pair: ReadonlySet<number> = new Set([id, selected])
+        setMatching(pair)
+        setSelected(null)
+        setTimeout(() => {
+          setTiles(ts => ts.map(t => pair.has(t.id) ? { ...t, removed: true } : t))
+          setMatching(new Set())
+        }, 380)
+      } else {
+        setSelected(id)               // switch selection
+      }
+    }
+  }
+
+  const containerRef = useRef<HTMLDivElement>(null)
+  const [containerW, setContainerW] = useState(0)
+  const [containerH, setContainerH] = useState(0)
+  useEffect(() => {
+    const el = containerRef.current; if (!el) return
+    const ro = new ResizeObserver(([e]) => {
+      setContainerW(e.contentRect.width); setContainerH(e.contentRect.height)
+    })
+    ro.observe(el); return () => ro.disconnect()
+  }, [])
+
+  const COLS = 6, ROWS = 3, GAP = 6
+  const ASPECT = 272 / 180  // tile height ÷ width
+  const twByW = containerW > 0 ? Math.floor((containerW - GAP * (COLS - 1)) / COLS) : 70
+  const twByH = containerH > 0 ? Math.floor((containerH - GAP * (ROWS - 1)) / ROWS / ASPECT) : 70
+  const tileW = Math.min(twByW, twByH, 110)
+  const tileH = Math.round(tileW * ASPECT)
+
+  const caption = useMemo(() => (
+    <><b>Mahjong!</b> Tap two matching tiles to remove them.</>
+  ), [])
+
+  return (
+    <>
+      <div style={{ ...ch4CanvasStyle, flex: 1, display: 'flex', flexDirection: 'column', overflow: 'hidden', padding: 10 }}>
+        <Ch4PlayAgainBtn show={true}
+          onClick={() => { setTiles(newGame()); setSelected(null); setMatching(new Set()) }}
+          bottomLeft />
+        <div ref={containerRef} style={{
+          flex: 1, minHeight: 0, minWidth: 0,
+          display: 'grid',
+          gridTemplateColumns: `repeat(${COLS}, ${tileW}px)`,
+          gridTemplateRows: `repeat(${ROWS}, ${tileH}px)`,
+          gap: GAP, alignContent: 'center', justifyContent: 'center',
+        }}>
+          {tiles.map(t => (
+            <div key={t.id} onClick={() => tap(t.id)} style={{
+              width: tileW, height: tileH,
+              opacity: t.removed ? 0 : (matching.has(t.id) ? 0.35 : 1),
+              transform: matching.has(t.id) ? 'scale(0.82)' : 'scale(1)',
+              transition: 'opacity 0.38s ease, transform 0.38s ease',
+              cursor: t.removed || matching.has(t.id) ? 'default' : 'pointer',
+              outline: selected === t.id ? `3px solid ${YELLOW}` : 'none',
+              outlineOffset: 3,
+              borderRadius: 8,
+              pointerEvents: t.removed || matching.has(t.id) ? 'none' : 'auto',
+              WebkitTapHighlightColor: 'transparent',
+            }}>
+              {!t.removed && (
+                <img src={MJ_IMGS[t.type]} alt="" draggable={false}
+                  style={{ width: '100%', height: '100%', display: 'block', userSelect: 'none' }} />
+              )}
+            </div>
+          ))}
+        </div>
+      </div>
+      <IntroText>{caption}</IntroText>
+      <SetDone done={won} />
+    </>
+  )
+}
+
+// Mahjong Level 2 — stacking pyramid
+// Each game randomly picks one of 3 fixed palettes; tiles are rendered as dot-grid cards.
+// Layout: layer 0 = 6 tiles, layer 1 = 4 tiles (offset 0.5), layer 2 = 2 tiles (offset 1.0)
+// All 12 tiles share the same look (top 2 dots = colorA, bottom 4 dots = colorB) so any
+// accessible pair can be removed — the challenge is the pyramid blocking order.
+
+// Fixed palettes: [top-row color (2 dots), bottom-rows color (4 dots)]
+const MJ2_PALETTES: [string, string][] = [
+  ['#5CCBF8', '#F63664'],  // blue + red
+  ['#FF7043', '#FDD302'],  // orange + yellow
+  ['#AB7ADE', '#4CAF6A'],  // purple + green
+]
+
+// Pyramid layout: layer 0=bottom(6), layer 1=middle(4), layer 2=top(2) = 12 slots, 6 pairs
+const MJ2_SLOTS: { layer: number; col: number }[] = [
+  { layer: 0, col: 0 }, { layer: 0, col: 1 }, { layer: 0, col: 2 },
+  { layer: 0, col: 3 }, { layer: 0, col: 4 }, { layer: 0, col: 5 },
+  { layer: 1, col: 0.5 }, { layer: 1, col: 1.5 },
+  { layer: 1, col: 2.5 }, { layer: 1, col: 3.5 },
+  { layer: 2, col: 1.0 }, { layer: 2, col: 2.0 },
+]
+
+function mj2Blocked(idx: number, removed: boolean[]): boolean {
+  const s = MJ2_SLOTS[idx]
+  return MJ2_SLOTS.some((o, i) => !removed[i] && o.layer === s.layer + 1 && Math.abs(o.col - s.col) < 1)
+}
+
+// Backtracking generator: assigns types to slots in a valid removal order,
+// guaranteeing a winnable game. Shuffled availTypes give a different layout each time.
+function mj2Assign(types: number[], removed: boolean[], availTypes: number[], ti: number): boolean {
+  if (ti === availTypes.length) return true
+  const free = MJ2_SLOTS
+    .map((_, i) => i)
+    .filter(i => !removed[i] && types[i] === -1 && !mj2Blocked(i, removed))
+    .sort(() => Math.random() - 0.5)
+  for (let i = 0; i < free.length; i++) {
+    for (let j = i + 1; j < free.length; j++) {
+      const a = free[i], b = free[j]
+      types[a] = availTypes[ti]; types[b] = availTypes[ti]
+      removed[a] = true;         removed[b] = true
+      if (mj2Assign(types, removed, availTypes, ti + 1)) return true
+      types[a] = -1; types[b] = -1
+      removed[a] = false; removed[b] = false
+    }
+  }
+  return false
+}
+
+function mj2NewGame(): number[] {
+  return Array(12).fill(0)  // all tiles same type; any 2 accessible tiles form a valid pair
+}
+
+function MahjongL2Page() {
+  const active = useContext(PageActiveCtx)
+  type S = { type: number; removed: boolean }
+
+  const [paletteIdx, setPaletteIdx] = useState(() => Math.floor(Math.random() * MJ2_PALETTES.length))
+  const [tiles,    setTiles]    = useState<S[]>(() => mj2NewGame().map(t => ({ type: t, removed: false })))
+  const [selected, setSelected] = useState<number | null>(null)
+  const [matching, setMatching] = useState<ReadonlySet<number>>(new Set())
+
+  const resetGame = () => {
+    setPaletteIdx(Math.floor(Math.random() * MJ2_PALETTES.length))
+    setTiles(mj2NewGame().map(t => ({ type: t, removed: false })))
+    setSelected(null)
+    setMatching(new Set())
+  }
+
+  useEffect(() => {
+    if (active) resetGame()
+  }, [active])  // eslint-disable-line react-hooks/exhaustive-deps
+
+  const won     = tiles.length > 0 && tiles.every(t => t.removed)
+  const removed = tiles.map(t => t.removed)
+
+  const tap = (idx: number) => {
+    if (!active || won || matching.has(idx)) return
+    const tile = tiles[idx]
+    if (!tile || tile.removed || mj2Blocked(idx, removed)) return
+    if (selected === null) {
+      setSelected(idx)
+    } else if (selected === idx) {
+      setSelected(null)
+    } else {
+      const prev = tiles[selected]
+      if (prev && !prev.removed && prev.type === tile.type) {
+        const pair = new Set([idx, selected]) as ReadonlySet<number>
+        setMatching(pair)
+        setSelected(null)
+        setTimeout(() => {
+          setTiles(ts => ts.map((t, i) => pair.has(i) ? { ...t, removed: true } : t))
+          setMatching(new Set())
+        }, 380)
+      } else {
+        setSelected(idx)
+      }
+    }
+  }
+
+  const containerRef = useRef<HTMLDivElement>(null)
+  const [cw, setCw] = useState(0)
+  const [ch, setCh] = useState(0)
+  useEffect(() => {
+    const el = containerRef.current; if (!el) return
+    const ro = new ResizeObserver(([e]) => { setCw(e.contentRect.width); setCh(e.contentRect.height) })
+    ro.observe(el); return () => ro.disconnect()
+  }, [])
+
+  const ASPECT = 272 / 180
+  const GAP = 6, SX = 9, SY = 12, LAYERS = 2  // per-layer pixel shift (right & up)
+
+  const twByW = cw > 0 ? Math.floor((cw - GAP * 5 - SX * LAYERS) / 6) : 60
+  const twByH = ch > 0 ? Math.floor((ch - SY * LAYERS) / ASPECT) : 60
+  const tileW = Math.min(twByW, twByH, 100)
+  const tileH = Math.round(tileW * ASPECT)
+  const totalW = 6 * tileW + 5 * GAP + LAYERS * SX
+  const totalH = tileH + LAYERS * SY
+
+  // Dot layout: 2 cols × 3 rows of circles; top row = colorA, rows 2-3 = colorB
+  const [colorA, colorB] = MJ2_PALETTES[paletteIdx]
+  const dotD   = Math.round(tileW * 0.35)
+  const colGap = Math.round((tileW - 2 * dotD) / 3)
+  const rowGap = Math.round((tileH - 3 * dotD) / 4)
+  const dotDefs = [
+    { r: 0, c: 0 }, { r: 0, c: 1 },
+    { r: 1, c: 0 }, { r: 1, c: 1 },
+    { r: 2, c: 0 }, { r: 2, c: 1 },
+  ]
+
+  const caption = useMemo(() => (
+    <><b>Mahjong Level 2!</b> Free (bright) tiles can be tapped. Clear the pyramid by removing pairs!</>
+  ), [])
+
+  return (
+    <>
+      <div style={{ ...ch4CanvasStyle, flex: 1, display: 'flex', flexDirection: 'column', overflow: 'hidden', padding: 10 }}>
+        <Ch4PlayAgainBtn show={true} onClick={resetGame} bottomLeft />
+        <div ref={containerRef} style={{ flex: 1, minHeight: 0, minWidth: 0, display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+          {cw > 0 && (
+            <div style={{ position: 'relative', width: totalW, height: totalH }}>
+              {MJ2_SLOTS.map((slot, idx) => {
+                const tile = tiles[idx]
+                if (!tile) return null
+                const blocked    = !tile.removed && mj2Blocked(idx, removed)
+                const free       = !tile.removed && !blocked
+                const isSelected = selected === idx
+                const isMatching = matching.has(idx)
+                const x = slot.col * (tileW + GAP) + slot.layer * SX
+                const y = (LAYERS - slot.layer) * SY
+                const zIdx = slot.layer * 100 + Math.round(slot.col * 10)
+
+                return (
+                  <div
+                    key={idx}
+                    onClick={() => tap(idx)}
+                    style={{
+                      position: 'absolute', left: x, top: y,
+                      width: tileW, height: tileH,
+                      zIndex: zIdx,
+                      opacity: tile.removed ? 0 : (isMatching ? 0.3 : 1),
+                      transform: isMatching ? 'scale(0.82)' : 'scale(1)',
+                      transition: 'opacity 0.38s, transform 0.38s',
+                      cursor: (free && !isMatching) ? 'pointer' : 'default',
+                      pointerEvents: tile.removed || isMatching ? 'none' : 'auto',
+                      WebkitTapHighlightColor: 'transparent',
+                    }}
+                  >
+                    {!tile.removed && (
+                      <div style={{
+                        width: '100%', height: '100%', position: 'relative',
+                        background: 'white',
+                        borderRadius: 8,
+                        boxShadow: '0 4px 0 #C8C8C8, 0 2px 6px rgba(0,0,0,0.08)',
+                        outline: isSelected ? `3px solid ${YELLOW}` : 'none',
+                        outlineOffset: 2,
+                        filter: blocked ? 'brightness(0.62) saturate(0.45)' : undefined,
+                        transition: 'filter 0.2s, outline 0.1s',
+                      }}>
+                        {dotDefs.map((dot, di) => (
+                          <div key={di} style={{
+                            position: 'absolute',
+                            left: colGap + dot.c * (dotD + colGap),
+                            top:  rowGap + dot.r * (dotD + rowGap),
+                            width: dotD, height: dotD,
+                            borderRadius: '50%',
+                            backgroundColor: dot.r === 0 ? colorA : colorB,
+                          }} />
+                        ))}
+                      </div>
+                    )}
+                  </div>
+                )
+              })}
+            </div>
+          )}
+        </div>
+      </div>
+      <IntroText>{caption}</IntroText>
+      <SetDone done={won} />
+    </>
+  )
+}
+
+const CHAPTER5_PAGES: React.ComponentType[] = [CS1Page, CS4Page, CS6Page, LookAndFindP4, LookAndFindP5, LookAndFindP6, MahjongPage, MahjongL2Page]
 
 export default function PressHere() {
   const [page,       setPage]      = useState(0)
