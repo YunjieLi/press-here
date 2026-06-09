@@ -1,4 +1,7 @@
 import { useState, useRef, useEffect, useLayoutEffect, createContext, useContext, useMemo } from 'react'
+
+const completionGifs = Object.values(import.meta.glob('../completion/*.gif', { eager: true, query: '?url', import: 'default' })) as string[]
+function randomCompletionGif() { return completionGifs[Math.floor(Math.random() * completionGifs.length)] }
 import '@fontsource-variable/nunito'
 import { ChevronRight, ChevronLeft, RotateCcw, X as LucideX, Circle as LucideCircle } from 'lucide-react'
 import { Button } from '@/components/ui/button'
@@ -1375,9 +1378,10 @@ function PrimaryBtn({ onClick, children }: { onClick: () => void; children: Reac
 }
 
 function GreatJob({ onReset, onNextChapter }: { onReset: () => void; onNextChapter?: () => void }) {
+  const [gif] = useState(randomCompletionGif)
   return (
     <div style={completionScreenStyle}>
-      <img src={import.meta.env.BASE_URL + 'completion-ch2.gif'} alt="Great job!"
+      <img src={gif} alt="Great job!"
         style={{ width: 'clamp(180px, 50vw, 320px)', height: 'clamp(180px, 50vw, 320px)', borderRadius: 28, objectFit: 'cover' }} />
       <div style={shineTextStyle}>Great job!</div>
       <div style={{ display: 'flex', gap: 16, alignItems: 'center' }}>
@@ -1389,9 +1393,10 @@ function GreatJob({ onReset, onNextChapter }: { onReset: () => void; onNextChapt
 }
 
 function WoohooScreen({ onReset, onNextChapter }: { onReset: () => void; onNextChapter?: () => void }) {
+  const [gif] = useState(randomCompletionGif)
   return (
     <div style={completionScreenStyle}>
-      <img src={import.meta.env.BASE_URL + 'completion-ch3.gif'} alt="Woohoo!"
+      <img src={gif} alt="Woohoo!"
         style={{ width: 'clamp(180px, 50vw, 320px)', height: 'clamp(180px, 50vw, 320px)', borderRadius: 28, objectFit: 'cover' }} />
       <div style={{ ...shineTextStyle, background: 'linear-gradient(90deg, #5CCBF8 0%, #FDD302 30%, #F63664 60%, #5CCBF8 100%)', backgroundSize: '300% auto' }}>Woohoo!!!</div>
       <div style={{ display: 'flex', gap: 16, alignItems: 'center' }}>
@@ -1414,9 +1419,10 @@ function AmazingScreen({ onReset }: { onReset: () => void }) {
 }
 
 function WellDone({ onReset, onNextChapter }: { onReset: () => void; onNextChapter: () => void }) {
+  const [gif] = useState(randomCompletionGif)
   return (
     <div style={completionScreenStyle}>
-      <img src={import.meta.env.BASE_URL + 'completion-ch1.gif'} alt="Well done!"
+      <img src={gif} alt="Well done!"
         style={{ maxWidth: 380, maxHeight: 340, width: '100%', borderRadius: 28, objectFit: 'contain', display: 'block' }} />
       <div style={shineTextStyle}>Well done!</div>
       <div style={{ display: 'flex', gap: 16, alignItems: 'center' }}>
@@ -2126,17 +2132,17 @@ function makeCh2DotPage(slotIdx: number): React.FC {
 }
 const Ch2DotSlots = Array.from({ length: 7 }, (_, i) => makeCh2DotPage(i))
 
-function Ch3ReplayBtn({ onClick }: { onClick: () => void }) {
+function ReplayIconBtn({ onClick, style }: { onClick: () => void; style?: React.CSSProperties }) {
   return (
     <button
       onClick={e => { e.stopPropagation(); onClick() }}
       title="Restart"
       style={{
-        position: 'absolute', top: 12, left: 12, zIndex: 4,
         width: 34, height: 34, borderRadius: '50%',
         border: '1.5px solid #d0ccc5', background: '#fff',
         cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center',
-        boxShadow: '0 1px 4px rgba(0,0,0,0.08)',
+        boxShadow: '0 1px 4px rgba(0,0,0,0.08)', flexShrink: 0,
+        ...style,
       }}
     >
       <RotateCcw size={15} strokeWidth={2.2} color="#888" />
@@ -2448,14 +2454,7 @@ function Ch3Page1({ winTarget = CH3_WIN, variant = 'normal' }: { winTarget?: num
             textAlign: 'center', pointerEvents: 'none',
           }}>
             <div style={{ fontSize: 24, fontWeight: 900, color: RED, fontFamily: 'inherit' }}>You made it! 🎉</div>
-            <button
-              onClick={e => { e.stopPropagation(); handleRestart() }}
-              style={{
-                pointerEvents: 'auto', marginTop: 12, fontSize: 14, cursor: 'pointer',
-                background: 'none', border: `1.5px solid ${RED}55`, color: RED,
-                fontFamily: 'inherit', padding: '4px 18px', borderRadius: 20,
-              }}
-            >↺ Play again</button>
+            <ReplayIconBtn onClick={handleRestart} style={{ pointerEvents: 'auto', marginTop: 12 }} />
           </div>
         )}
       </div>
@@ -2880,14 +2879,7 @@ function Ch3Page2({ winTarget = C3P2_WIN, variant = 'normal' }: { winTarget?: nu
             textAlign: 'center', pointerEvents: 'none',
           }}>
             <div style={{ fontSize: 24, fontWeight: 900, color: YELLOW, fontFamily: 'inherit' }}>You made it! 🎉</div>
-            <button
-              onClick={e => { e.stopPropagation(); const { cw, ch } = dimsRef.current; initGame(cw, ch); tick(n => n + 1) }}
-              style={{
-                pointerEvents: 'auto', marginTop: 12, fontSize: 14, cursor: 'pointer',
-                background: 'none', border: `1.5px solid ${YELLOW}88`, color: YELLOW,
-                fontFamily: 'inherit', padding: '4px 18px', borderRadius: 20,
-              }}
-            >↺ Play again</button>
+            <ReplayIconBtn onClick={() => { const { cw, ch } = dimsRef.current; initGame(cw, ch); tick(n => n + 1) }} style={{ pointerEvents: 'auto', marginTop: 12 }} />
           </div>
         )}
       </div>
@@ -3163,14 +3155,7 @@ function Ch3Page3({ winTarget = C3P3_WIN_DIST, variant = 'normal' }: { winTarget
             textAlign: 'center', pointerEvents: 'none', zIndex: 1,
           }}>
             <div style={{ fontSize: 24, fontWeight: 900, color: BLUE, fontFamily: 'inherit' }}>You made it! 🎉</div>
-            <button
-              onClick={e => { e.stopPropagation(); const { cw, ch } = dimsRef.current; initGame(cw, ch) }}
-              style={{
-                pointerEvents: 'auto', marginTop: 12, fontSize: 14, cursor: 'pointer',
-                background: 'none', border: `1.5px solid ${BLUE}88`, color: BLUE,
-                fontFamily: 'inherit', padding: '4px 18px', borderRadius: 20,
-              }}
-            >↺ Play again</button>
+            <ReplayIconBtn onClick={() => { const { cw, ch } = dimsRef.current; initGame(cw, ch) }} style={{ pointerEvents: 'auto', marginTop: 12 }} />
           </div>
         )}
       </div>
@@ -3624,24 +3609,16 @@ function Ch4GameOverBanner({ winnerLabel, winnerColor }: {
   )
 }
 
-/** Icon-only "Play again" button — positioned absolute in canvas top-right corner */
 function Ch4PlayAgainBtn({ show, onClick, bottomLeft }: { show: boolean; onClick: () => void; bottomLeft?: boolean }) {
   if (!show) return null
   return (
-    <button
+    <ReplayIconBtn
       onClick={onClick}
-      title="Play again"
       style={{
         position: 'absolute', zIndex: 10,
         ...(bottomLeft ? { bottom: 8, left: 8 } : { top: 8, right: 8 }),
-        width: 30, height: 30, borderRadius: 20, padding: 0,
-        background: 'transparent', border: '1.5px solid #ddd',
-        color: '#bbb', cursor: 'pointer',
-        display: 'flex', alignItems: 'center', justifyContent: 'center',
       }}
-    >
-      <RotateCcw size={13} strokeWidth={2.5} />
-    </button>
+    />
   )
 }
 
@@ -4285,7 +4262,6 @@ function DotsAndBoxesPage() {
 }
 
 const CHAPTER1_PAGES = [Page1, Page23, Page4, Page56, Page7, Page8, Page9, Page10, Page11]
-const CHAPTER2_PAGES = [Chapter2Page1, Chapter2Page3, ...Ch2DotSlots]
 function Ch3Page1L2() { return <Ch3Page1 winTarget={CH3_WIN2} /> }
 function Ch3Page2L2() { return <Ch3Page2 winTarget={C3P2_WIN2} /> }
 function Ch3Page3L2() { return <Ch3Page3 winTarget={C3P3_WIN_DIST2} /> }
@@ -4293,7 +4269,6 @@ function Ch3Page1L3() { return <Ch3Page1 winTarget={CH3_WIN3} variant="hard" /> 
 function Ch3Page2L3() { return <Ch3Page2 winTarget={C3P2_WIN3} variant="hard" /> }
 function Ch3Page3L3() { return <Ch3Page3 winTarget={C3P3_WIN_DIST3} variant="hard" /> }
 
-const CHAPTER3_PAGES = [Ch3Page1, Ch3Page1L2, Ch3Page1L3, Ch3Page2, Ch3Page2L2, Ch3Page2L3, Ch3Page3, Ch3Page3L2, Ch3Page3L3]
 
 const DT_VB   = 300   // SVG viewBox size
 const DT_PAD  = 20    // padding inside viewBox
@@ -5479,7 +5454,6 @@ function CatMousePage() {
   )
 }
 
-const CHAPTER4_PAGES: React.ComponentType[] = [TicTacToePage, DotsAndBoxesPage, DotTrianglesPage, CatMousePage, JmspPage]
 
 // Shared layout constants
 const CS_CELL  = 48   // SVG units per cell
@@ -5561,25 +5535,6 @@ function csConflict(board: (number | null)[][], r: number, c: number,
   return false
 }
 
-// Returns true if the board can still be completed (backtracking solver).
-// Mutates board in place but always restores it — caller should pass a copy.
-function csSolvable(board: (number | null)[][], size: number, boxH: number, boxW: number): boolean {
-  for (let r = 0; r < size; r++) {
-    for (let c = 0; c < size; c++) {
-      if (board[r][c] !== null) continue
-      for (let v = 0; v < size; v++) {
-        board[r][c] = v
-        if (!csConflict(board, r, c, size, boxH, boxW) && csSolvable(board, size, boxH, boxW)) {
-          board[r][c] = null
-          return true
-        }
-      }
-      board[r][c] = null
-      return false
-    }
-  }
-  return true  // no empty cell found → complete
-}
 
 function ColorSudokuPage({ cfg }: { cfg: CSCfg }) {
   const isLandscape = useIsLandscape()
@@ -5607,10 +5562,11 @@ function ColorSudokuPage({ cfg }: { cfg: CSCfg }) {
     fromX: number; fromY: number; toX: number; toY: number;
     cell: { r: number; c: number };
   } | null>(null)
-  const svgRef     = useRef<SVGSVGElement>(null)
-  // boardSqRef: the square <div> that wraps the SVG — used to measure rendered px size
-  const boardSqRef = useRef<HTMLDivElement>(null)
-  const [boardPx, setBoardPx] = useState(0)
+  const svgRef      = useRef<SVGSVGElement>(null)
+  const boardSqRef  = useRef<HTMLDivElement>(null)   // DOM position lookups only
+  const canvasRef   = useRef<HTMLDivElement>(null)   // stable outer container — for dot sizing
+  const [boardPx,   setBoardPx]  = useState(0)      // board square px (position math)
+  const [canvasPx,  setCanvasPx] = useState(0)      // outer container px (tray/ghost sizing)
 
   useEffect(() => {
     const el = boardSqRef.current
@@ -5622,6 +5578,18 @@ function ColorSudokuPage({ cfg }: { cfg: CSCfg }) {
     ro.observe(el)
     return () => ro.disconnect()
   }, [])
+
+  // Measure the outer container (stable — not affected by tray size changes)
+  useEffect(() => {
+    const el = canvasRef.current
+    if (!el) return
+    const ro = new ResizeObserver(([entry]) => {
+      const { width, height } = entry.contentRect
+      setCanvasPx(isLandscape ? height : width)
+    })
+    ro.observe(el)
+    return () => ro.disconnect()
+  }, [isLandscape])
 
   // Caption is set via IntroText (rendered in JSX) so it respects PageActiveCtx.
 
@@ -5657,6 +5625,32 @@ function ColorSudokuPage({ cfg }: { cfg: CSCfg }) {
     const r = Math.floor((svgY - gridPad) / CS_CELL)
     return (r >= 0 && r < size && c >= 0 && c < size) ? { r, c } : null
   }
+
+  // A region is highlighted only if it directly contains a duplicate value.
+  const hasDup = (vals: (number | null)[]) => {
+    const seen = new Set<number>()
+    for (const v of vals) {
+      if (v === null) continue
+      if (seen.has(v)) return true
+      seen.add(v)
+    }
+    return false
+  }
+  const conflictRows = new Set<number>(
+    Array.from({ length: size }, (_, r) => r).filter(r => hasDup(board[r]))
+  )
+  const conflictCols = new Set<number>(
+    Array.from({ length: size }, (_, c) => c).filter(c => hasDup(board.map(row => row[c])))
+  )
+  const conflictBoxes = new Set<string>()
+  for (let br = 0; br < size; br += boxH)
+    for (let bc = 0; bc < size; bc += boxW) {
+      const vals: (number | null)[] = []
+      for (let dr = 0; dr < boxH; dr++)
+        for (let dc = 0; dc < boxW; dc++)
+          vals.push(board[br + dr][bc + dc])
+      if (hasDup(vals)) conflictBoxes.add(`${br},${bc}`)
+    }
 
   // Global pointer tracking while a palette dot is being dragged
   useEffect(() => {
@@ -5710,6 +5704,22 @@ function ColorSudokuPage({ cfg }: { cfg: CSCfg }) {
     <svg ref={svgRef} viewBox={`0 0 ${vb} ${vb}`}
       style={{ width: '100%', aspectRatio: '1 / 1', maxHeight: '100%', display: 'block', touchAction: 'none' }}
     >
+      {/* Pink conflict highlights — rows, cols, boxes (rendered first, behind everything) */}
+      {Array.from(conflictRows).map(r => (
+        <rect key={`chr${r}`} x={gridPad} y={gridPad + r * CS_CELL}
+          width={size * CS_CELL} height={CS_CELL} fill="rgba(255,182,193,0.28)" />
+      ))}
+      {Array.from(conflictCols).map(c => (
+        <rect key={`chc${c}`} x={gridPad + c * CS_CELL} y={gridPad}
+          width={CS_CELL} height={size * CS_CELL} fill="rgba(255,182,193,0.28)" />
+      ))}
+      {Array.from(conflictBoxes).map(key => {
+        const [br, bc] = key.split(',').map(Number)
+        return <rect key={`chb${key}`}
+          x={gridPad + bc * CS_CELL} y={gridPad + br * CS_CELL}
+          width={boxW * CS_CELL} height={boxH * CS_CELL} fill="rgba(255,182,193,0.42)" />
+      })}
+
       {/* Box-border lines (thicker) and inner cell lines (thinner) */}
       {Array.from({ length: size + 1 }, (_, i) => (
         <line key={`h${i}`}
@@ -5757,14 +5767,14 @@ function ColorSudokuPage({ cfg }: { cfg: CSCfg }) {
     </svg>
   )
 
-  // PD: drag-visual diameter (ghost, fly, error flash) — board-matched scale
-  const PD = boardPx > 0 ? Math.max(20, Math.round(2 * CS_DOT_R * boardPx / CS_VB6)) : 44
-
-  // Tray sizing constants
+  // TRAY_PD: tray dot diameter — derived from the stable outer container, not the board.
+  // This breaks the ResizeObserver feedback loop that caused tray trembling in landscape.
   const trayPad = 14
   const trayGap = 12
   const trayMargin = 10
-  const TRAY_PD = PD  // matches board dot diameter exactly
+  const TRAY_PD = canvasPx > 0 ? Math.max(20, Math.round(2 * CS_DOT_R * canvasPx / CS_VB6)) : 44
+  // PD: ghost/fly/flash dot diameter — matched to the board's actual rendered size
+  const PD = boardPx > 0 ? Math.max(20, Math.round(2 * CS_DOT_R * boardPx / CS_VB6)) : TRAY_PD
   const trayFontSize = Math.round(TRAY_PD * 0.40)
 
   // Ghost dot that follows the pointer while dragging
@@ -5920,12 +5930,11 @@ function ColorSudokuPage({ cfg }: { cfg: CSCfg }) {
   if (isLandscape) {
     return (
       <>
-        <div style={{ ...ch4CanvasStyle, flex: 1, display: 'flex', flexDirection: 'row', overflow: 'hidden' }}>
+        <div ref={canvasRef} style={{ ...ch4CanvasStyle, flex: 1, display: 'flex', flexDirection: 'row', overflow: 'hidden' }}>
           <div style={{ flex: 1, minWidth: 0, minHeight: 0, display: 'flex', alignItems: 'center', justifyContent: 'center', position: 'relative' }}>
             <div ref={boardSqRef} style={{ height: '100%', aspectRatio: '1 / 1', maxWidth: '100%' }}>
               {svgBoard}
             </div>
-            <Ch4PlayAgainBtn show={true} onClick={resetBoard} bottomLeft />
           </div>
           {palettePanel('column')}
         </div>
@@ -5938,12 +5947,11 @@ function ColorSudokuPage({ cfg }: { cfg: CSCfg }) {
 
   return (
     <>
-      <div style={{ ...ch4CanvasStyle, flex: 1, display: 'flex', flexDirection: 'column', overflow: 'hidden', justifyContent: 'center' }}>
+      <div ref={canvasRef} style={{ ...ch4CanvasStyle, flex: 1, display: 'flex', flexDirection: 'column', overflow: 'hidden', justifyContent: 'center' }}>
         <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', position: 'relative' }}>
           <div ref={boardSqRef} style={{ width: '100%', aspectRatio: '1 / 1' }}>
             {svgBoard}
           </div>
-          <Ch4PlayAgainBtn show={true} onClick={resetBoard} bottomLeft />
         </div>
         {palettePanel('row')}
       </div>
@@ -5975,13 +5983,10 @@ function CS1Page() {
 
   const [boardA, setBoardA] = useState<(number | null)[][]>(() => CS1_GIVEN_A.map(r => [...r]))
   const [boardB, setBoardB] = useState<(number | null)[][]>(() => CS1_GIVEN_B.map(r => [...r]))
-  const [lastPlacedA, setLastPlacedA] = useState<{ r: number; c: number } | null>(null)
-  const [lastPlacedB, setLastPlacedB] = useState<{ r: number; c: number } | null>(null)
 
   const resetBoards = () => {
     setBoardA(CS1_GIVEN_A.map(r => [...r]))
     setBoardB(CS1_GIVEN_B.map(r => [...r]))
-    setLastPlacedA(null); setLastPlacedB(null)
   }
 
   // Drag-from-palette state
@@ -6091,8 +6096,8 @@ function CS1Page() {
       const sc = toSvgXY(e.clientX, e.clientY)
       const hit = sc ? hitCell(sc.x, sc.y) : null
       if (hit?.empty) {
-        if (hit.box === 'A') { setBoardA(prev => { const n = prev.map(r => [...r]); n[hit.r][hit.c] = dragColorIdx; return n }); setLastPlacedA({ r: hit.r, c: hit.c }) }
-        else                 { setBoardB(prev => { const n = prev.map(r => [...r]); n[hit.r][hit.c] = dragColorIdx; return n }); setLastPlacedB({ r: hit.r, c: hit.c }) }
+        if (hit.box === 'A') { setBoardA(prev => { const n = prev.map(r => [...r]); n[hit.r][hit.c] = dragColorIdx; return n }) }
+        else                 { setBoardB(prev => { const n = prev.map(r => [...r]); n[hit.r][hit.c] = dragColorIdx; return n }) }
         const el = boardDivRef.current
         if (el) {
           const rect = el.getBoundingClientRect()
@@ -6118,6 +6123,14 @@ function CS1Page() {
     return () => { window.removeEventListener('pointermove', onMove); window.removeEventListener('pointerup', onUp) }
   }, [dragColorIdx, boardA, boardB, isLandscape]) // eslint-disable-line react-hooks/exhaustive-deps
 
+  // Must be computed before svgBoard (referenced inside its JSX)
+  const cs1DupVals = (bd: (number | null)[][]) => {
+    const flat = bd.flat().filter((v): v is number => v !== null)
+    return new Set(flat.filter((v, i) => flat.indexOf(v) !== i))
+  }
+  const dupValsA = cs1DupVals(boardA)
+  const dupValsB = cs1DupVals(boardB)
+
   const svgBoard = (
     <svg ref={svgRef} viewBox={`0 0 ${VW} ${VH}`}
       style={{ width: '100%', height: '100%', display: 'block', touchAction: 'none' }}
@@ -6132,6 +6145,10 @@ function CS1Page() {
         const sz = 2 * CS_CELL
         return (
           <g key={box}>
+            {/* Pink conflict highlight for this box */}
+            {(box === 'A' ? dupValsA : dupValsB).size > 0 && (
+              <rect x={gx} y={gy} width={sz} height={sz} fill="rgba(255,182,193,0.40)" />
+            )}
             {/* Grid lines — box border (thick) vs inner cell divider (thin), matching P2/P3 */}
             {[0, 1, 2].map(i => (
               <line key={`h${i}`} x1={gx} y1={gy + i * CS_CELL}
@@ -6147,9 +6164,7 @@ function CS1Page() {
             ))}
             {/* Dots */}
             {(() => {
-                // Detect duplicate colour values in this box (conflict = appears >1 time)
-                const flat = board.flat().filter(v => v !== null)
-                const dupVals = new Set(flat.filter((v, i) => flat.indexOf(v) !== i))
+                const dupVals = box === 'A' ? dupValsA : dupValsB
                 return Array.from({ length: 2 }, (_, r) =>
                   Array.from({ length: 2 }, (_, c) => {
                     const cx = gx + c * CS_CELL + CS_CELL / 2
@@ -6263,36 +6278,46 @@ function CS1Page() {
     )
   }
 
-  const boxConflicted = (board: (number | null)[][], pos: { r: number; c: number } | null) => {
-    if (!pos) return false
-    const val = board[pos.r]?.[pos.c]
-    return val !== null && board.flat().filter(v => v === val).length > 1
-  }
-  const conflictA = boxConflicted(boardA, lastPlacedA)
-  const conflictB = boxConflicted(boardB, lastPlacedB)
-
-  const misplacedX = (box: 'A' | 'B', pos: { r: number; c: number } | null, conflict: boolean, onClear: () => void) => {
-    if (!pos || !conflict || !!flyDot) return null
+  // All X overlays for conflicting user-placed cells across both boxes
+  const misplacedXOverlays = (() => {
+    if (flyDot) return null
     const svg = svgRef.current; if (!svg) return null
     const rect = svg.getBoundingClientRect(); if (!rect.width) return null
-    const ox = box === 'A' ? 0 : B_OX
-    const oy = box === 'A' ? 0 : B_OY
-    const svgCx = ox + CS_PAD + pos.c * CS_CELL + CS_CELL / 2
-    const svgCy = oy + CS_PAD + pos.r * CS_CELL + CS_CELL / 2
-    const sx = rect.left + svgCx * (rect.width  / VW)
-    const sy = rect.top  + svgCy * (rect.height / VH)
-    const dp = cs1DotR * (rect.width / VW)   // dot pixel radius
-    return (
-      <div key={`x${box}`} onClick={onClear} style={{
-        position: 'fixed', left: sx - dp, top: sy - dp,
-        width: dp * 2, height: dp * 2,
-        display: 'flex', alignItems: 'center', justifyContent: 'center',
-        cursor: 'pointer', pointerEvents: 'auto', zIndex: 9990,
-      }}>
-        <LucideX size={Math.round(dp * 1.1)} strokeWidth={2.5} color="rgba(255,255,255,0.85)" />
-      </div>
-    )
-  }
+    const dp = cs1DotR * (rect.width / VW)
+
+    const nodes: React.ReactNode[] = []
+    for (const [box, board, given, dupVals, setBoard] of [
+      ['A', boardA, CS1_GIVEN_A, dupValsA, setBoardA],
+      ['B', boardB, CS1_GIVEN_B, dupValsB, setBoardB],
+    ] as const) {
+      const ox = box === 'A' ? 0 : B_OX
+      const oy = box === 'A' ? 0 : B_OY
+      for (let r = 0; r < 2; r++) {
+        for (let c = 0; c < 2; c++) {
+          const val = (board as (number|null)[][])[r][c]
+          if (val === null || (given as (number|null)[][])[r][c] !== null || !dupVals.has(val)) continue
+          const svgCx = ox + CS_PAD + c * CS_CELL + CS_CELL / 2
+          const svgCy = oy + CS_PAD + r * CS_CELL + CS_CELL / 2
+          const sx = rect.left + svgCx * (rect.width  / VW)
+          const sy = rect.top  + svgCy * (rect.height / VH)
+          nodes.push(
+            <div key={`x${box}${r}${c}`}
+              onClick={() => (setBoard as typeof setBoardA)(prev => { const n = prev.map(row => [...row]); n[r][c] = null; return n })}
+              style={{
+                position: 'fixed', left: sx - dp, top: sy - dp,
+                width: dp * 2, height: dp * 2,
+                display: 'flex', alignItems: 'center', justifyContent: 'center',
+                cursor: 'pointer', pointerEvents: 'auto', zIndex: 9990,
+              }}
+            >
+              <LucideX size={Math.round(dp * 1.1)} strokeWidth={2.5} color="rgba(255,255,255,0.85)" />
+            </div>
+          )
+        }
+      }
+    }
+    return nodes
+  })()
 
   const fixedOverlays = (
     <>
@@ -6302,8 +6327,7 @@ function CS1Page() {
         100% { opacity: 0;  transform: scale(0.5); }
       }`}</style>
       {ghostDot}{errorFlashEl}{flyDotEl}
-      {misplacedX('A', lastPlacedA, conflictA, () => { setBoardA(prev => { const n = prev.map(r => [...r]); n[lastPlacedA!.r][lastPlacedA!.c] = null; return n }); setLastPlacedA(null) })}
-      {misplacedX('B', lastPlacedB, conflictB, () => { setBoardB(prev => { const n = prev.map(r => [...r]); n[lastPlacedB!.r][lastPlacedB!.c] = null; return n }); setLastPlacedB(null) })}
+      {misplacedXOverlays}
     </>
   )
 
@@ -6319,7 +6343,6 @@ function CS1Page() {
               style={{ width: '100%', aspectRatio: `${VW} / ${VH}`, maxHeight: '100%' }}>
               {svgBoard}
             </div>
-            <Ch4PlayAgainBtn show={true} onClick={resetBoards} bottomLeft />
           </div>
           {palettePanel('column')}
         </div>
@@ -6338,7 +6361,6 @@ function CS1Page() {
             style={{ height: '100%', aspectRatio: `${VW} / ${VH}`, maxWidth: '100%' }}>
             {svgBoard}
           </div>
-          <Ch4PlayAgainBtn show={true} onClick={resetBoards} bottomLeft />
         </div>
         {palettePanel('row')}
       </div>
@@ -6604,7 +6626,7 @@ function LookAndFind({ colors, cols, rows, numRounds, dotCount, maxDotD, flipPro
     ro.observe(el); return () => ro.disconnect()
   }, [])
 
-  const TILE_GAP = 6
+  const TILE_GAP = 24
   const tileW = containerW > 0 ? Math.floor((containerW - TILE_GAP * (cols - 1)) / cols) : 60
   const tileH = containerH > 0 ? Math.floor((containerH - TILE_GAP * (rows - 1)) / rows) : 80
   const tile  = Math.min(tileW, Math.round(tileH * 0.6), dotCount === 4 ? 100 : 110)
@@ -6669,10 +6691,6 @@ function LookAndFind({ colors, cols, rows, numRounds, dotCount, maxDotD, flipPro
         flexDirection: isLandscape ? 'row' : 'column',
         overflow: 'hidden', gap: 12, padding: 10,
       }}>
-        <Ch4PlayAgainBtn show={true} onClick={() => {
-          setRound(0); setPageDone(false); setGame(makeLafGame(numColors, total, dotCount))
-          if (flipPrompt) showThenFlip(); else setPromptFaceUp(false)
-        }} bottomLeft />
         {/* Prompt card — invisible when done so layout stays stable */}
         <div style={{ display: 'flex', flexDirection: isLandscape ? 'column' : 'row', alignItems: 'center', justifyContent: 'center', flexShrink: 0, gap: 8, visibility: pageDone ? 'hidden' : 'visible' }}>
           {promptCard}
@@ -6772,7 +6790,7 @@ function MahjongPage() {
     ro.observe(el); return () => ro.disconnect()
   }, [])
 
-  const COLS = 6, ROWS = 3, GAP = 6
+  const COLS = 6, ROWS = 3, GAP = 24
   const ASPECT = 272 / 180  // tile height ÷ width
   const twByW = containerW > 0 ? Math.floor((containerW - GAP * (COLS - 1)) / COLS) : 70
   const twByH = containerH > 0 ? Math.floor((containerH - GAP * (ROWS - 1)) / ROWS / ASPECT) : 70
@@ -6786,9 +6804,6 @@ function MahjongPage() {
   return (
     <>
       <div style={{ ...ch4CanvasStyle, flex: 1, display: 'flex', flexDirection: 'column', overflow: 'hidden', padding: 10 }}>
-        <Ch4PlayAgainBtn show={true}
-          onClick={() => { setTiles(newGame()); setSelected(null); setMatching(new Set()) }}
-          bottomLeft />
         <div ref={containerRef} style={{
           flex: 1, minHeight: 0, minWidth: 0,
           display: 'grid',
@@ -6965,7 +6980,7 @@ function MahjongL2Page() {
   }, [])
 
   const ASPECT = 272 / 180
-  const GAP = 6
+  const GAP = 0
   // 6 cols (0-5) × 4 rows (0-3) base grid; layer offsets are fractional and fit within
   const COLS = 6, ROWS = 4
 
@@ -6986,7 +7001,6 @@ function MahjongL2Page() {
   return (
     <>
       <div style={{ ...ch4CanvasStyle, flex: 1, display: 'flex', flexDirection: 'column', overflow: 'hidden', padding: 10 }}>
-        <Ch4PlayAgainBtn show={true} onClick={resetGame} bottomLeft />
         <div ref={containerRef} style={{ flex: 1, minHeight: 0, minWidth: 0, display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
           {cw > 0 && (
             <div style={{ position: 'relative', width: totalW, height: totalH }}>
@@ -7045,35 +7059,333 @@ function MahjongL2Page() {
   )
 }
 
-const CHAPTER5_PAGES: React.ComponentType[] = [CS1Page, CS4Page, CS6Page, LookAndFindP4, LookAndFindP5, LookAndFindP6, MahjongPage, MahjongL2Page]
+// ── Game registry ─────────────────────────────────────────────────────────────
+
+type CompletionCfg = {
+  text: string
+  emojiIcon?: string
+  subtitle?: string
+}
+
+type GameDef = {
+  id: string
+  title: string
+  emoji: string
+  group: string
+  pages: React.ComponentType[]
+  completion: CompletionCfg
+}
+
+const GAMES: GameDef[] = [
+  {
+    id: 'intro',
+    title: 'Intro',
+    emoji: '🟡',
+    group: 'Getting Started',
+    pages: [...CHAPTER1_PAGES, Chapter2Page1, Chapter2Page3],
+    completion: { text: 'Well done!' },
+  },
+  {
+    id: 'connect-dots',
+    title: 'Connect the Dots',
+    emoji: '✏️',
+    group: 'Drawing',
+    pages: [...Ch2DotSlots],
+    completion: { text: 'Great job!' },
+  },
+  {
+    id: 'red-dot-jump',
+    title: 'Red Dot Jump',
+    emoji: '🔴',
+    group: 'Action',
+    pages: [Ch3Page1, Ch3Page1L2, Ch3Page1L3],
+    completion: { text: 'Woohoo!' },
+  },
+  {
+    id: 'cloud-hop',
+    title: 'Cloud Hop',
+    emoji: '☁️',
+    group: 'Action',
+    pages: [Ch3Page2, Ch3Page2L2, Ch3Page2L3],
+    completion: { text: 'Woohoo!' },
+  },
+  {
+    id: 'flappy-dot',
+    title: 'Flappy Dot',
+    emoji: '🐦',
+    group: 'Action',
+    pages: [Ch3Page3, Ch3Page3L2, Ch3Page3L3],
+    completion: { text: 'Woohoo!' },
+  },
+  {
+    id: 'tic-tac-toe',
+    title: 'Tic Tac Toe',
+    emoji: '⭕',
+    group: 'Board Games',
+    pages: [TicTacToePage],
+    completion: { text: 'Amazing!', emojiIcon: '🏆', subtitle: 'You beat me at Tic Tac Toe!' },
+  },
+  {
+    id: 'dots-boxes',
+    title: 'Dots & Boxes',
+    emoji: '⬛',
+    group: 'Board Games',
+    pages: [DotsAndBoxesPage],
+    completion: { text: 'Great job!', emojiIcon: '🎯' },
+  },
+  {
+    id: 'dot-triangles',
+    title: 'Dot Triangles',
+    emoji: '🔺',
+    group: 'Board Games',
+    pages: [DotTrianglesPage],
+    completion: { text: 'Great job!', emojiIcon: '⭐' },
+  },
+  {
+    id: 'cat-mouse',
+    title: 'Cat & Mouse',
+    emoji: '🐭',
+    group: 'Board Games',
+    pages: [CatMousePage],
+    completion: { text: 'Amazing!', emojiIcon: '🎊' },
+  },
+  {
+    id: 'jump-chess',
+    title: 'Jump Chess',
+    emoji: '♟️',
+    group: 'Board Games',
+    pages: [JmspPage],
+    completion: { text: 'Amazing!', emojiIcon: '🎉' },
+  },
+  {
+    id: 'color-sudoku',
+    title: 'Color Sudoku',
+    emoji: '🎨',
+    group: 'Puzzles',
+    pages: [CS1Page, CS4Page, CS6Page],
+    completion: { text: 'Amazing!', emojiIcon: '🏆' },
+  },
+  {
+    id: 'look-find',
+    title: 'Look & Find',
+    emoji: '🔍',
+    group: 'Puzzles',
+    pages: [LookAndFindP4, LookAndFindP5, LookAndFindP6],
+    completion: { text: 'Amazing!', emojiIcon: '🎉' },
+  },
+  {
+    id: 'mahjong',
+    title: 'Mahjong',
+    emoji: '🀄',
+    group: 'Puzzles',
+    pages: [MahjongPage, MahjongL2Page],
+    completion: { text: 'Amazing!', emojiIcon: '🀄' },
+  },
+]
+
+// ── Per-game completion screen ────────────────────────────────────────────────
+
+function GameCompleteScreen({ game, onReplay, onNext }: { game: GameDef; onReplay: () => void; onNext: () => void }) {
+  const cfg = game.completion
+  const [gif] = useState(randomCompletionGif)
+  return (
+    <div style={completionScreenStyle}>
+      {gif
+        ? <img src={gif} alt={cfg.text}
+            style={{ width: 'clamp(180px,50vw,320px)', height: 'clamp(180px,50vw,320px)', borderRadius: 28, objectFit: 'cover' }} />
+        : <div style={{ fontSize: 'clamp(80px,18vw,140px)', lineHeight: 1, animation: 'popIn 0.7s cubic-bezier(0.34,1.56,0.64,1) forwards' }}>{cfg.emojiIcon}</div>
+      }
+      <div style={shineTextStyle}>{cfg.text}</div>
+      {cfg.subtitle && <div style={{ fontSize: 18, color: '#888', fontWeight: 600 }}>{cfg.subtitle}</div>}
+      <div style={{ display: 'flex', gap: 16, alignItems: 'center' }}>
+        <ReplayIconBtn onClick={onReplay} />
+        <PrimaryBtn onClick={onNext}>Next game <ChevronRight size={18} strokeWidth={3} /></PrimaryBtn>
+      </div>
+    </div>
+  )
+}
+
+// ── Game switcher slide-in panel ──────────────────────────────────────────────
+
+function GameSwitcherPanel({ show, currentGameId, onSelect, onClose }: {
+  show: boolean
+  currentGameId: string
+  onSelect: (id: string) => void
+  onClose: () => void
+}) {
+  const vw = useWindowWidth()
+  const isMobile = vw < 480
+
+  // Mount immediately on open; unmount after exit transition finishes
+  const [mounted, setMounted] = useState(show)
+  const [visible, setVisible] = useState(false)
+
+  useEffect(() => {
+    if (show) {
+      setMounted(true)
+      // Two rAFs: first paints the off-screen panel, second triggers the transition
+      requestAnimationFrame(() => requestAnimationFrame(() => setVisible(true)))
+    } else {
+      setVisible(false)
+      const t = setTimeout(() => setMounted(false), 400)
+      return () => clearTimeout(t)
+    }
+  }, [show])
+
+  const groups = useMemo(() => {
+    const map = new Map<string, GameDef[]>()
+    for (const g of GAMES) {
+      if (!map.has(g.group)) map.set(g.group, [])
+      map.get(g.group)!.push(g)
+    }
+    return map
+  }, [])
+
+  if (!mounted) return null
+
+  const EASE = 'cubic-bezier(0.32, 0.72, 0, 1)'
+  const DUR  = '0.38s'
+
+  return (
+    <>
+      {/* Dimmed backdrop */}
+      <div
+        onClick={onClose}
+        style={{
+          position: 'fixed', inset: 0, zIndex: 99999,
+          background: 'rgba(0,0,0,0.32)',
+          opacity: visible ? 1 : 0,
+          transition: `opacity ${DUR} ease`,
+        }}
+      />
+
+      {/* Slide-in panel */}
+      <div style={{
+        position: 'fixed', zIndex: 100000,
+        background: '#fef9f0',
+        fontFamily: '"Nunito Variable", Nunito, sans-serif',
+        userSelect: 'none', WebkitUserSelect: 'none',
+        display: 'flex', flexDirection: 'column',
+        transition: `transform ${DUR} ${EASE}`,
+        ...(isMobile ? {
+          bottom: 0, left: 0, right: 0,
+          maxHeight: '80dvh',
+          borderRadius: '20px 20px 0 0',
+          boxShadow: '0 -4px 40px rgba(0,0,0,0.18)',
+          transform: visible ? 'translateY(0)' : 'translateY(100%)',
+        } : {
+          top: 0, right: 0, bottom: 0,
+          width: 'min(360px, 80vw)',
+          boxShadow: '-4px 0 40px rgba(0,0,0,0.14)',
+          transform: visible ? 'translateX(0)' : 'translateX(100%)',
+        }),
+      }}>
+        {/* Drag handle (mobile only) */}
+        {isMobile && (
+          <div style={{ display: 'flex', justifyContent: 'center', padding: '10px 0 0' }}>
+            <div style={{ width: 36, height: 4, borderRadius: 2, background: '#d8d4cc' }} />
+          </div>
+        )}
+
+        {/* Header */}
+        <div style={{
+          display: 'flex', alignItems: 'center', justifyContent: 'space-between',
+          padding: isMobile ? '10px 20px 12px' : '18px 20px 14px',
+          borderBottom: '1.5px solid #eee', flexShrink: 0,
+        }}>
+          <span style={{ fontSize: 16, fontWeight: 800, color: '#222' }}>All Games</span>
+          <button
+            onClick={onClose}
+            style={{
+              background: 'none', border: '1.5px solid #e0e0e0', cursor: 'pointer',
+              color: '#888', padding: 0, width: 32, height: 32, borderRadius: 8,
+              display: 'flex', alignItems: 'center', justifyContent: 'center',
+              transition: 'all 0.12s',
+            }}
+            onMouseEnter={e => { e.currentTarget.style.borderColor = '#bbb'; e.currentTarget.style.color = '#333' }}
+            onMouseLeave={e => { e.currentTarget.style.borderColor = '#e0e0e0'; e.currentTarget.style.color = '#888' }}
+          >
+            <LucideX size={16} strokeWidth={2.5} />
+          </button>
+        </div>
+
+        {/* Scrollable game grid */}
+        <div style={{ flex: 1, overflowY: 'auto', padding: '16px 20px 32px' }}>
+          {Array.from(groups.entries()).map(([group, games], gi) => (
+            <div key={group} style={{ marginBottom: gi === groups.size - 1 ? 0 : 20 }}>
+              <div style={{
+                fontSize: 10, fontWeight: 800, letterSpacing: '0.09em',
+                color: '#bbb', textTransform: 'uppercase', marginBottom: 8,
+              }}>
+                {group}
+              </div>
+              <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(86px, 1fr))', gap: 8 }}>
+                {games.map(game => {
+                  const active = game.id === currentGameId
+                  return (
+                    <button
+                      key={game.id}
+                      onClick={() => onSelect(game.id)}
+                      style={{
+                        display: 'flex', flexDirection: 'column', alignItems: 'center',
+                        justifyContent: 'center', gap: 5, padding: '12px 8px',
+                        borderRadius: 12,
+                        background: active ? '#222' : '#fff',
+                        border: `1.5px solid ${active ? '#222' : '#e4e0d8'}`,
+                        cursor: 'pointer', fontFamily: 'inherit',
+                        transition: 'all 0.12s ease',
+                        boxShadow: active ? 'none' : '0 1px 3px rgba(0,0,0,0.05)',
+                      }}
+                      onMouseEnter={e => { if (!active) { e.currentTarget.style.borderColor = '#bbb'; e.currentTarget.style.boxShadow = '0 2px 8px rgba(0,0,0,0.10)' } }}
+                      onMouseLeave={e => { if (!active) { e.currentTarget.style.borderColor = '#e4e0d8'; e.currentTarget.style.boxShadow = '0 1px 3px rgba(0,0,0,0.05)' } }}
+                    >
+                      <span style={{ fontSize: 26, lineHeight: 1 }}>{game.emoji}</span>
+                      <span style={{
+                        fontSize: 11, fontWeight: 700, lineHeight: 1.25, textAlign: 'center',
+                        color: active ? '#fff' : '#444',
+                      }}>
+                        {game.title}
+                      </span>
+                    </button>
+                  )
+                })}
+              </div>
+            </div>
+          ))}
+        </div>
+      </div>
+    </>
+  )
+}
+
+// ── Main shell ────────────────────────────────────────────────────────────────
 
 export default function PressHere() {
-  const [page,       setPage]      = useState(0)
-  const [caption,    setCaption]   = useState<React.ReactNode>('')
-  const [done,       setDone]      = useState(false)
-  const [globalKey,  setGlobalKey] = useState(0)
-  // Lazy mounting: only pages that have been visited are mounted in the DOM.
-  // Always pre-mount page 0 and 1 so the first navigation is instant.
+  const [page,         setPage]       = useState(0)
+  const [caption,      setCaption]    = useState<React.ReactNode>('')
+  const [done,         setDone]       = useState(false)
+  const [globalKey,    setGlobalKey]  = useState(0)
   const [mountedPages, setMountedPages] = useState<Set<number>>(() => new Set([0, 1]))
-  const [wellDone,   setWellDone]  = useState(false)
-  const [chapter,    setChapter]   = useState(() => {
-    const m = window.location.pathname.match(/\/ch(\d+)/)
-    const ch = m ? Math.max(1, Math.min(5, parseInt(m[1], 10))) : 1
-    // Immediately redirect /press-here → /press-here/ch1 (or whichever chapter)
-    window.history.replaceState(null, '', `/press-here/ch${ch}`)
-    return ch
+  const [wellDone,     setWellDone]   = useState(false)
+  const [gameId,       setGameId]     = useState(() => {
+    const m = window.location.pathname.match(/\/game\/([^/]+)/)
+    const id = m?.[1] ?? 'intro'
+    const valid = GAMES.find(g => g.id === id) ? id : 'intro'
+    window.history.replaceState(null, '', `/press-here/game/${valid}`)
+    return valid
   })
-  const [ch2Shapes,  setCh2Shapes] = useState<ShapeDef[]>(() => pickRandomShapes(7))
+  const [showPanel,    setShowPanel]  = useState(false)
+  const [ch2Shapes,    setCh2Shapes]  = useState<ShapeDef[]>(() => pickRandomShapes(7))
   const handoffRef     = useRef<Handoff>({ page4Dots: null, page5Dots: null, page6Dots: null, ch2p2Dots: null, ch2LatestDots: null })
   const canvasAreaRef  = useRef<HTMLDivElement>(null)
   const firstRenderRef = useRef(true)
 
-  // Sync chapter to URL without causing a navigation/reload
-  useEffect(() => {
-    window.history.replaceState(null, '', `/press-here/ch${chapter}`)
-  }, [chapter])
+  const currentGame = GAMES.find(g => g.id === gameId) ?? GAMES[0]
 
-  // Reset mounted-page set whenever the chapter restarts (globalKey bumped)
+  useEffect(() => {
+    window.history.replaceState(null, '', `/press-here/game/${gameId}`)
+  }, [gameId])
+
   useEffect(() => {
     setMountedPages(new Set([0, 1]))
   }, [globalKey])  // eslint-disable-line react-hooks/exhaustive-deps
@@ -7082,15 +7394,13 @@ export default function PressHere() {
   const isMobile = vw < 480
   const dotSize  = Math.max(36, Math.min(80, Math.floor(vw * 0.12)))
 
-  const activePages = chapter === 1 ? CHAPTER1_PAGES : chapter === 2 ? CHAPTER2_PAGES : chapter === 3 ? CHAPTER3_PAGES : chapter === 4 ? CHAPTER4_PAGES : CHAPTER5_PAGES
+  const activePages = currentGame.pages
   const TOTAL = activePages.length
-  const isFirst = page === 0
   const isLast  = page === TOTAL - 1
 
   function nav(next: number) {
     setPage(next)
     setDone(false)
-    // Pre-mount the navigated page and the one after it
     setMountedPages(prev => {
       const s = new Set(prev)
       s.add(next)
@@ -7099,61 +7409,18 @@ export default function PressHere() {
     })
   }
 
-  function reset() {
+  function startGame(id: string) {
+    if (id === 'connect-dots') setCh2Shapes(pickRandomShapes(7))
     setGlobalKey(k => k + 1)
     setPage(0)
     setDone(false)
     setWellDone(false)
-    setChapter(1)
+    setGameId(id)
+    setShowPanel(false)
     handoffRef.current = { page4Dots: null, page5Dots: null, page6Dots: null, ch2p2Dots: null, ch2LatestDots: null }
   }
 
-  function startChapter2() {
-    setCh2Shapes(pickRandomShapes(7))
-    setGlobalKey(k => k + 1)
-    setPage(0)
-    setDone(false)
-    setWellDone(false)
-    setChapter(2)
-    handoffRef.current = { page4Dots: null, page5Dots: null, page6Dots: null, ch2p2Dots: null, ch2LatestDots: null }
-  }
-
-  function startChapter3() {
-    setGlobalKey(k => k + 1)
-    setPage(0)
-    setDone(false)
-    setWellDone(false)
-    setChapter(3)
-    handoffRef.current = { page4Dots: null, page5Dots: null, page6Dots: null, ch2p2Dots: null, ch2LatestDots: null }
-  }
-
-  function startChapter4() {
-    setGlobalKey(k => k + 1)
-    setPage(0)
-    setDone(false)
-    setWellDone(false)
-    setChapter(4)
-    handoffRef.current = { page4Dots: null, page5Dots: null, page6Dots: null, ch2p2Dots: null, ch2LatestDots: null }
-  }
-
-  function startChapter5() {
-    setGlobalKey(k => k + 1)
-    setPage(0)
-    setDone(false)
-    setWellDone(false)
-    setChapter(5)
-    handoffRef.current = { page4Dots: null, page5Dots: null, page6Dots: null, ch2p2Dots: null, ch2LatestDots: null }
-  }
-
-  function replayChapter() {
-    if (chapter === 2) startChapter2()
-    else if (chapter === 3) startChapter3()
-    else if (chapter === 4) startChapter4()
-    else if (chapter === 5) startChapter5()
-    else reset()
-  }
-
-  // Page-change shadow lift animation
+  // Page-change fade animation
   useLayoutEffect(() => {
     if (firstRenderRef.current) { firstRenderRef.current = false; return }
     const el = canvasAreaRef.current
@@ -7164,10 +7431,8 @@ export default function PressHere() {
     )
   }, [page])
 
-  // Chapter completion sound
   useEffect(() => { if (wellDone) playChapterComplete() }, [wellDone])
 
-  // Spacebar → Next / Done when available
   useEffect(() => {
     function onKey(e: KeyboardEvent) {
       if (e.code !== 'Space' || !done) return
@@ -7179,7 +7444,6 @@ export default function PressHere() {
     return () => window.removeEventListener('keydown', onKey)
   }, [done, isLast, page])   // eslint-disable-line react-hooks/exhaustive-deps
 
-  // Secret shortcut: X finishes the current page
   useEffect(() => {
     function onKey(e: KeyboardEvent) {
       if (e.key === 'x' || e.key === 'X') setDone(true)
@@ -7188,17 +7452,20 @@ export default function PressHere() {
     return () => window.removeEventListener('keydown', onKey)
   }, [])   // eslint-disable-line react-hooks/exhaustive-deps
 
-  // Prevent page scrolling
   useLayoutEffect(() => {
     document.documentElement.style.overflow = 'hidden'
     document.body.style.overflow = 'hidden'
   }, [])
 
-  if (wellDone && chapter === 5) return <AmazingScreen onReset={startChapter5} />
-  if (wellDone && chapter === 4) return <AmazingScreen onReset={startChapter4} />
-  if (wellDone && chapter === 3) return <WoohooScreen onReset={startChapter3} onNextChapter={startChapter4} />
-  if (wellDone && chapter === 2) return <GreatJob onReset={startChapter2} onNextChapter={startChapter3} />
-  if (wellDone) return <WellDone onReset={reset} onNextChapter={startChapter2} />
+  const nextGame = GAMES[(GAMES.indexOf(currentGame) + 1) % GAMES.length]
+
+  if (wellDone) return (
+    <GameCompleteScreen
+      game={currentGame}
+      onReplay={() => startGame(gameId)}
+      onNext={() => startGame(nextGame.id)}
+    />
+  )
 
   return (
     <Ch2ShapesCtx.Provider value={ch2Shapes}>
@@ -7206,16 +7473,12 @@ export default function PressHere() {
       <DoneCtx.Provider value={setDone}>
         <HandoffCtx.Provider value={handoffRef}>
           <div style={{
-            height: '100dvh',
-            background: '#fef9f0',
-            display: 'flex',
-            justifyContent: 'center',
+            height: '100dvh', background: '#fef9f0',
+            display: 'flex', justifyContent: 'center',
             overflow: 'hidden',
             fontFamily: '"Nunito Variable", Nunito, sans-serif',
-            userSelect: 'none',
-            WebkitUserSelect: 'none',
-            WebkitTouchCallout: 'none',
-            touchAction: 'manipulation',
+            userSelect: 'none', WebkitUserSelect: 'none',
+            WebkitTouchCallout: 'none', touchAction: 'manipulation',
           }}>
           <DotSizeCtx.Provider value={dotSize}>
           <div style={{
@@ -7225,9 +7488,8 @@ export default function PressHere() {
             boxSizing: 'border-box',
           }}>
 
-            {/* ── Header: title + chapter / replay pills ── */}
+            {/* ── Header ── */}
             <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: isMobile ? 6 : 10 }}>
-              {/* Title with coloured dots */}
               <div style={{ display: 'flex', alignItems: 'center', gap: 6, fontSize: 'clamp(15px,3vw,22px)', fontWeight: 700, color: '#222', letterSpacing: -0.3, fontFamily: 'inherit' }}>
                 <span style={{ width: 'clamp(7px,1.2vw,10px)', height: 'clamp(7px,1.2vw,10px)', borderRadius: '50%', background: RED,    flexShrink: 0, display: 'inline-block' }} />
                 Press
@@ -7235,40 +7497,41 @@ export default function PressHere() {
                 here
                 <span style={{ width: 'clamp(7px,1.2vw,10px)', height: 'clamp(7px,1.2vw,10px)', borderRadius: '50%', background: BLUE,   flexShrink: 0, display: 'inline-block' }} />
               </div>
-              {/* Chapter pills + Replay */}
-              <div style={{ display: 'flex', gap: isMobile ? 4 : 6, alignItems: 'center' }}>
-                {([1, 2, 3, 4, 5] as const).map(ch => (
-                  <button
-                    key={ch}
-                    onClick={() => ch === 1 ? reset() : ch === 2 ? startChapter2() : ch === 3 ? startChapter3() : ch === 4 ? startChapter4() : startChapter5()}
-                    style={{
-                      padding: isMobile ? '3px 8px' : '4px 14px', borderRadius: 20,
-                      background: chapter === ch ? '#333' : 'transparent',
-                      border: `1.5px solid ${chapter === ch ? '#333' : '#ddd'}`,
-                      fontSize: isMobile ? 11 : 12, fontWeight: 700, letterSpacing: '0.02em',
-                      color: chapter === ch ? '#fff' : '#bbb',
-                      fontFamily: 'inherit',
-                      cursor: chapter === ch ? 'default' : 'pointer',
-                      transition: 'all 0.15s ease',
-                    }}
-                    onMouseEnter={e => { if (chapter !== ch) { e.currentTarget.style.borderColor = '#aaa'; e.currentTarget.style.color = '#666' } }}
-                    onMouseLeave={e => { if (chapter !== ch) { e.currentTarget.style.borderColor = '#ddd'; e.currentTarget.style.color = '#bbb' } }}
-                  >
-                    {isMobile ? ch : `Ch ${ch}`}
-                  </button>
-                ))}
+
+              {/* Game switcher + Replay */}
+              <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+                <button
+                  onClick={() => setShowPanel(true)}
+                  style={{
+                    display: 'flex', alignItems: 'center', gap: isMobile ? 5 : 7,
+                    padding: isMobile ? '4px 10px 4px 8px' : '5px 14px 5px 10px',
+                    borderRadius: 20, background: '#fff',
+                    border: '1.5px solid #e0e0e0',
+                    fontSize: isMobile ? 12 : 13, fontWeight: 700, color: '#555',
+                    fontFamily: 'inherit', cursor: 'pointer',
+                    boxShadow: '0 1px 3px rgba(0,0,0,0.07)',
+                    transition: 'all 0.15s ease',
+                  }}
+                  onMouseEnter={e => { e.currentTarget.style.borderColor = '#bbb'; e.currentTarget.style.color = '#222'; e.currentTarget.style.boxShadow = '0 2px 8px rgba(0,0,0,0.12)' }}
+                  onMouseLeave={e => { e.currentTarget.style.borderColor = '#e0e0e0'; e.currentTarget.style.color = '#555'; e.currentTarget.style.boxShadow = '0 1px 3px rgba(0,0,0,0.07)' }}
+                >
+                  <span style={{ fontSize: isMobile ? 15 : 17 }}>{currentGame.emoji}</span>
+                  {!isMobile && <span style={{ maxWidth: 100, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{currentGame.title}</span>}
+                  <svg width="10" height="7" viewBox="0 0 10 7" fill="none" style={{ flexShrink: 0, opacity: 0.45 }}>
+                    <path d="M1 1l4 4 4-4" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round"/>
+                  </svg>
+                </button>
+                <ReplayIconBtn onClick={() => startGame(gameId)} />
               </div>
             </div>
 
-            {/* Canvas area — pages are lazily mounted on first visit to reduce startup cost */}
+            {/* Canvas area */}
             <div ref={canvasAreaRef} key={globalKey} style={{ flex: 1, minHeight: 0, position: 'relative' }}>
               {activePages.map((P, i) => {
                 if (!mountedPages.has(i)) return <div key={i} style={{ display: 'none' }} />
                 return (
                   <PageActiveCtx.Provider key={i} value={i === page}>
-                    <div style={{
-                      position: 'absolute', inset: 0, display: i === page ? 'flex' : 'none', flexDirection: 'column',
-                    }}>
+                    <div style={{ position: 'absolute', inset: 0, display: i === page ? 'flex' : 'none', flexDirection: 'column' }}>
                       <P />
                     </div>
                   </PageActiveCtx.Provider>
@@ -7276,85 +7539,43 @@ export default function PressHere() {
               })}
             </div>
 
-            {/* Caption row — caption left-aligned, Next button pinned to the right */}
+            {/* Caption + Next button */}
             <div style={{ position: 'relative', display: 'flex', alignItems: 'center', justifyContent: 'flex-start', marginTop: isMobile ? 8 : 14, minHeight: isMobile ? 38 : 46 }}>
-              <div style={{ fontSize: 'clamp(13px,2vw,18px)', fontWeight: 600, color: '#444', lineHeight: 1.4, maxWidth: chapter === 4 ? 'calc(100% - 90px)' : 'calc(100% - 190px)' }}>
+              <div style={{ fontSize: 'clamp(13px,2vw,18px)', fontWeight: 600, color: '#444', lineHeight: 1.4, maxWidth: 'calc(100% - 190px)' }}>
                 {caption}
               </div>
-              {chapter === 4 ? (
-                <div style={{ position: 'absolute', right: 0, display: 'flex', gap: 6 }}>
-                  <button
-                    onClick={() => nav(page - 1)}
-                    disabled={page === 0}
-                    title="Previous"
-                    style={{
-                      width: isMobile ? 32 : 36, height: isMobile ? 32 : 36, borderRadius: 20, padding: 0,
-                      background: 'transparent', border: `1.5px solid ${page === 0 ? '#eee' : '#ddd'}`,
-                      color: page === 0 ? '#ddd' : '#bbb', cursor: page === 0 ? 'default' : 'pointer',
-                      display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0,
-                    }}
-                  >
-                    <ChevronLeft size={isMobile ? 15 : 17} strokeWidth={2.5} />
-                  </button>
-                  <button
-                    onClick={isLast ? () => setWellDone(true) : () => nav(page + 1)}
-                    disabled={!done}
-                    title={isLast ? 'Done' : 'Next'}
-                    style={{
-                      width: isMobile ? 32 : 36, height: isMobile ? 32 : 36, borderRadius: 20, padding: 0,
-                      background: 'transparent', border: `1.5px solid ${done ? '#ddd' : '#eee'}`,
-                      color: done ? '#bbb' : '#ddd', cursor: done ? 'pointer' : 'default',
-                      display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0,
-                    }}
-                  >
-                    <ChevronRight size={isMobile ? 15 : 17} strokeWidth={2.5} />
-                  </button>
-                </div>
-              ) : (
-                <button
-                  onClick={isLast ? () => setWellDone(true) : () => nav(page + 1)}
-                  style={{
-                    position: 'absolute', right: 0,
-                    display: 'flex', alignItems: 'center', gap: isMobile ? 4 : 8,
-                    padding: isMobile ? '7px 16px' : '10px 28px', borderRadius: 40,
-                    background: '#FDD302', border: 'none',
-                    fontSize: isMobile ? 16 : 20, fontWeight: 800, color: '#333',
-                    fontFamily: 'inherit', cursor: 'pointer',
-                    flexShrink: 0,
-                    visibility: done ? 'visible' : 'hidden',
-                  }}
-                  onMouseEnter={e => (e.currentTarget.style.background = '#ffc700')}
-                  onMouseLeave={e => (e.currentTarget.style.background = '#FDD302')}
-                  onMouseDown={e => (e.currentTarget.style.transform = 'scale(0.96)')}
-                  onMouseUp={e => (e.currentTarget.style.transform = 'scale(1)')}
-                >
-                  {isLast ? 'Done' : <>Next <ChevronRight size={isMobile ? 17 : 22} strokeWidth={3} /></>}
-                </button>
-              )}
-            </div>
-
-            {/* Footer — dot pagination */}
-            <div style={{ display: 'flex', justifyContent: 'center', alignItems: 'center', marginTop: isMobile ? 6 : 10, gap: 7 }}>
-              {Array.from({ length: TOTAL }, (_, i) => (
-                <button
-                  key={i}
-                  onClick={() => nav(i)}
-                  style={{
-                    width:  i === page ? 13 : 8,
-                    height: i === page ? 13 : 8,
-                    borderRadius: '50%',
-                    background: i === page ? YELLOW : '#ddd',
-                    border: 'none', padding: 0, cursor: 'pointer',
-                    flexShrink: 0,
-                    transition: 'width 0.2s ease, height 0.2s ease, background 0.2s ease',
-                  }}
-                />
-              ))}
+              <button
+                onClick={isLast ? () => setWellDone(true) : () => nav(page + 1)}
+                style={{
+                  position: 'absolute', right: 0,
+                  display: 'flex', alignItems: 'center', gap: isMobile ? 4 : 8,
+                  padding: isMobile ? '7px 16px' : '10px 28px', borderRadius: 40,
+                  background: '#FDD302', border: 'none',
+                  fontSize: isMobile ? 16 : 20, fontWeight: 800, color: '#333',
+                  fontFamily: 'inherit', cursor: 'pointer', flexShrink: 0,
+                  visibility: done ? 'visible' : 'hidden',
+                }}
+                onMouseEnter={e => (e.currentTarget.style.background = '#ffc700')}
+                onMouseLeave={e => (e.currentTarget.style.background = '#FDD302')}
+                onMouseDown={e => (e.currentTarget.style.transform = 'scale(0.96)')}
+                onMouseUp={e => (e.currentTarget.style.transform = 'scale(1)')}
+              >
+                {isLast ? 'Done' : <>Next <ChevronRight size={isMobile ? 17 : 22} strokeWidth={3} /></>}
+              </button>
             </div>
 
           </div>
           </DotSizeCtx.Provider>
           </div>
+
+          {/* Game switcher slide-in panel */}
+          <GameSwitcherPanel
+            show={showPanel}
+            currentGameId={gameId}
+            onSelect={startGame}
+            onClose={() => setShowPanel(false)}
+          />
+
         </HandoffCtx.Provider>
       </DoneCtx.Provider>
     </CaptionCtx.Provider>
