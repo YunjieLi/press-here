@@ -3,7 +3,7 @@ import { useState, useRef, useEffect, useLayoutEffect, createContext, useContext
 const completionGifs = Object.values(import.meta.glob('../completion/*.gif', { eager: true, query: '?url', import: 'default' })) as string[]
 function randomCompletionGif() { return completionGifs[Math.floor(Math.random() * completionGifs.length)] }
 import '@fontsource-variable/nunito'
-import { ChevronRight, ChevronLeft, RotateCcw, X as LucideX, Circle as LucideCircle } from 'lucide-react'
+import { ChevronRight, ChevronLeft, RotateCcw, X as LucideX, Circle as LucideCircle, Volume2 } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { Pagination, PaginationContent, PaginationItem, PaginationLink, PaginationNext, PaginationPrevious } from '@/components/ui/pagination'
 import { cn } from '@/lib/utils'
@@ -3436,10 +3436,45 @@ function ShowRulesButton({ onClick }: { onClick: () => void }) {
   )
 }
 
+function SpeakButton({ text }: { text: string }) {
+  const [speaking, setSpeaking] = useState(false)
+  const speak = (e: React.MouseEvent) => {
+    e.stopPropagation()
+    if (window.speechSynthesis.speaking) {
+      window.speechSynthesis.cancel()
+      setSpeaking(false)
+      return
+    }
+    const utt = new SpeechSynthesisUtterance(text)
+    utt.pitch = 1.55
+    utt.rate  = 1.05
+    const voices = window.speechSynthesis.getVoices()
+    const voice  =
+      voices.find(v => /samantha|karen|zira/i.test(v.name)) ||
+      voices.find(v => v.lang.startsWith('en-') && /female|woman/i.test(v.name)) ||
+      voices.find(v => v.lang.startsWith('en-'))
+    if (voice) utt.voice = voice
+    utt.onstart = () => setSpeaking(true)
+    utt.onend   = () => setSpeaking(false)
+    utt.onerror = () => setSpeaking(false)
+    window.speechSynthesis.speak(utt)
+  }
+  return (
+    <Button
+      variant="ghost"
+      size="icon-xs"
+      onClick={speak}
+      style={{ verticalAlign: 'middle', marginRight: 2, color: speaking ? '#FDD302' : '#aaa' }}
+    >
+      <Volume2 />
+    </Button>
+  )
+}
+
 function ch4Caption(name: string, desc: string, onShowRules: () => void): React.ReactNode {
   const punctuated = /[.!?]$/.test(desc) ? desc : desc + '.'
   return (
-    <><span style={{ fontWeight: 700 }}>{name}:</span> {punctuated}{' '}<ShowRulesButton onClick={onShowRules} /></>
+    <><SpeakButton text={`${name}: ${punctuated}`} /><span style={{ fontWeight: 700 }}>{name}:</span> {punctuated}{' '}<ShowRulesButton onClick={onShowRules} /></>
   )
 }
 
@@ -5978,13 +6013,13 @@ const CS4_CFG: CSCfg = {
   size: 4, colors: CS4_COLORS, boxH: 2, boxW: 2,
   solution: CS4_SOL, puzzle: CS4_PUZZLE,
   trayOrder: [1, 2, 3, 0],   // RED, YELLOW, GREEN, BLUE
-  caption: <><b>Color Sudoku:</b> Every row, column, and box needs one of each color!</>,
+  caption: <><SpeakButton text="Color Sudoku: Every row, column, and box needs one of each color!" /><b>Color Sudoku:</b> Every row, column, and box needs one of each color!</>,
 }
 const CS6_CFG: CSCfg = {
   size: 6, colors: CS6_COLORS, boxH: 2, boxW: 3,
   solution: CS6_SOL, puzzle: CS6_PUZZLE,
   trayOrder: [1, 2, 3, 0, 4, 5],   // RED, YELLOW, GREEN, BLUE, PURPLE, ORANGE
-  caption: <><b>Color Sudoku:</b> Every row, column, and box needs one of each color!</>,
+  caption: <><SpeakButton text="Color Sudoku: Every row, column, and box needs one of each color!" /><b>Color Sudoku:</b> Every row, column, and box needs one of each color!</>,
 }
 
 function CS1Page() {
@@ -6344,7 +6379,7 @@ function CS1Page() {
   )
 
   // eslint-disable-next-line react-hooks/exhaustive-deps
-  const caption = useMemo(() => <>Drag the dot to where it belongs — every box needs all 4 colors!</>, [])
+  const caption = useMemo(() => <><SpeakButton text="Drag the dot to where it belongs — every box needs all 4 colors!" />Drag the dot to where it belongs — every box needs all 4 colors!</>, [])
 
   if (isLandscape) {
     return (
@@ -6651,7 +6686,7 @@ function LookAndFind({ colors, cols, rows, numRounds, dotCount, maxDotD, flipPro
   const dotDRaw = dotCount === 2 ? Math.round(tile * 0.72) : Math.floor((sq - gap4) / 2)
   const dotD = maxDotD != null ? Math.min(dotDRaw, maxDotD) : dotDRaw
 
-  const caption = useMemo(() => <>Tap every tile that looks the same as the one at the top!</>, [])
+  const caption = useMemo(() => <><SpeakButton text="Tap every tile that looks the same as the one at the top!" />Tap every tile that looks the same as the one at the top!</>, [])
 
   // Shared prompt face content
   const promptFace = dotCount === 4 ? (
@@ -6812,7 +6847,7 @@ function MahjongPage() {
   const tileH = Math.round(tileW * ASPECT)
 
   const caption = useMemo(() => (
-    <>Find two tiles that look the same and tap them!</>
+    <><SpeakButton text="Find two tiles that look the same and tap them!" />Find two tiles that look the same and tap them!</>
   ), [])
 
   return (
@@ -7010,7 +7045,7 @@ function MahjongL2Page() {
   const tileToSrc = (t: number) => MJ2_ALL_SRCS[Math.floor(t / 9)][t % 9]
 
   const caption = useMemo(() => (
-    <>Tap two bright matching tiles to uncover the ones hiding below!</>
+    <><SpeakButton text="Tap two bright matching tiles to uncover the ones hiding below!" />Tap two bright matching tiles to uncover the ones hiding below!</>
   ), [])
 
   return (
