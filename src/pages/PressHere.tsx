@@ -3446,12 +3446,13 @@ function SpeakButton({ text }: { text: string }) {
       return
     }
     const utt = new SpeechSynthesisUtterance(text)
-    utt.pitch = 1.55
-    utt.rate  = 1.05
+    utt.pitch = 1.15
+    utt.rate  = 1.0
     const voices = window.speechSynthesis.getVoices()
     const voice  =
-      voices.find(v => /samantha|karen|zira/i.test(v.name)) ||
-      voices.find(v => v.lang.startsWith('en-') && /female|woman/i.test(v.name)) ||
+      voices.find(v => /google.*us.*english/i.test(v.name) && !/male/i.test(v.name)) ||
+      voices.find(v => /samantha|karen|victoria|moira/i.test(v.name)) ||
+      voices.find(v => v.lang.startsWith('en-') && !/male/i.test(v.name)) ||
       voices.find(v => v.lang.startsWith('en-'))
     if (voice) utt.voice = voice
     utt.onstart = () => setSpeaking(true)
@@ -3460,14 +3461,20 @@ function SpeakButton({ text }: { text: string }) {
     window.speechSynthesis.speak(utt)
   }
   return (
-    <Button
-      variant="ghost"
-      size="icon-xs"
+    <button
       onClick={speak}
-      style={{ verticalAlign: 'middle', marginRight: 2, color: speaking ? '#FDD302' : '#aaa' }}
+      title="Read aloud"
+      style={{
+        width: 34, height: 34, borderRadius: '50%',
+        border: '1.5px solid #d0ccc5', background: '#fff',
+        cursor: 'pointer', display: 'inline-flex', alignItems: 'center', justifyContent: 'center',
+        boxShadow: '0 1px 4px rgba(0,0,0,0.08)', flexShrink: 0,
+        verticalAlign: 'middle', marginRight: 8, color: speaking ? '#FDD302' : '#888',
+        transition: 'color 0.15s',
+      }}
     >
-      <Volume2 />
-    </Button>
+      <Volume2 size={15} strokeWidth={2.2} />
+    </button>
   )
 }
 
