@@ -2175,6 +2175,18 @@ const CH3_PX       = 50      // player x position (% from left — horizontal ce
 const CH3_OBS_W    = 60      // all obstacles same width px
 const CH3_OBS_H    = 80      // all obstacles same height px
 
+function sfxJump() {
+  try {
+    const ctx = new (window.AudioContext || (window as any).webkitAudioContext)()
+    const now = ctx.currentTime
+    const osc = ctx.createOscillator(); const g = ctx.createGain()
+    osc.type = 'sine'
+    osc.frequency.setValueAtTime(420, now); osc.frequency.linearRampToValueAtTime(840, now + 0.12)
+    g.gain.setValueAtTime(0.18, now); g.gain.exponentialRampToValueAtTime(0.001, now + 0.18)
+    osc.connect(g); g.connect(ctx.destination); osc.start(now); osc.stop(now + 0.2)
+  } catch {}
+}
+
 function Ch3Page1({ winTarget = CH3_WIN, variant = 'normal' }: { winTarget?: number; variant?: 'normal' | 'hard' } = {}) {
   const active     = useContext(PageActiveCtx)
   const outerRef   = useRef<HTMLDivElement>(null)
@@ -2324,7 +2336,7 @@ function Ch3Page1({ winTarget = CH3_WIN, variant = 'normal' }: { winTarget?: num
     if (wonRef.current) return
     if (deadRef.current) { handleRestart(); return }
     runRef.current = true
-    if (yRef.current >= CH3_GROUND - 0.3) vyRef.current = -CH3_JUMP_V
+    if (yRef.current >= CH3_GROUND - 0.3) { vyRef.current = -CH3_JUMP_V; sfxJump() }
   }
 
   function handleRestart() {
@@ -3700,7 +3712,7 @@ function TicTacToePage() {
     (mode === 'two-player' || current === 'X')
 
   // eslint-disable-next-line react-hooks/exhaustive-deps
-  const tttCaption = useMemo(() => ch4Caption('Tic-tac-toe', 'Take turns placing pieces — get three in a row to win!', () => setRulesOpen(true)), [])
+  const tttCaption = useMemo(() => ch4Caption('Tic-tac-toe', 'Take turns! Get 3 of your pieces in a row to win!', () => setRulesOpen(true)), [])
 
   const TTT_N  = 3
   const TTT_VB = 2 * CH4_VB_PAD + TTT_N * CH4_VB_CELL
@@ -3975,7 +3987,7 @@ function DotsAndBoxesPage() {
   const gameOver = bBoxes.every(b => b !== null)
 
   // eslint-disable-next-line react-hooks/exhaustive-deps
-  const dbCaption = useMemo(() => ch4Caption('Dots & Boxes', 'Draw lines to close boxes and outscore your opponent!', () => setRulesOpen(true)), [])
+  const dbCaption = useMemo(() => ch4Caption('Dots & Boxes', 'Draw a line! Close a box to get a point!', () => setRulesOpen(true)), [])
 
   useEffect(() => {
     if (gameOver && scoreX > scoreO && scoreX > scoreY && !hasWon) setHasWon(true)
@@ -4653,7 +4665,7 @@ function DotTrianglesPage() {
   ) : null
 
   // eslint-disable-next-line react-hooks/exhaustive-deps
-  const dtCaption = useMemo(() => ch4Caption('Dot Triangles', 'Connect dots to form triangles — lines can\'t cross!', () => setRulesOpen(true)), [])
+  const dtCaption = useMemo(() => ch4Caption('Dots & Triangles', 'Draw lines to make triangles — but don\'t let them cross!', () => setRulesOpen(true)), [])
   const dtRules = (
     <>
       <RuleSteps steps={[
@@ -4688,7 +4700,7 @@ function DotTrianglesPage() {
         </div>
         <IntroText>{dtCaption}</IntroText>
         <SetDone celebrate={false} done={gameOver} />
-        {rulesOpen && <Ch4RulesModal title="How to play Dot Triangles" onClose={() => setRulesOpen(false)}>{dtRules}</Ch4RulesModal>}
+        {rulesOpen && <Ch4RulesModal title="How to play Dots & Triangles" onClose={() => setRulesOpen(false)}>{dtRules}</Ch4RulesModal>}
       </>
     )
   }
@@ -4712,7 +4724,7 @@ function DotTrianglesPage() {
       </div>
       <IntroText>{dtCaption}</IntroText>
       <SetDone celebrate={false} done={gameOver} />
-      {rulesOpen && <Ch4RulesModal title="How to play Dot Triangles" onClose={() => setRulesOpen(false)}>{dtRules}</Ch4RulesModal>}
+      {rulesOpen && <Ch4RulesModal title="How to play Dots & Triangles" onClose={() => setRulesOpen(false)}>{dtRules}</Ch4RulesModal>}
     </>
   )
 }
@@ -5070,7 +5082,7 @@ function JmspPage() {
   ) : null
 
   // eslint-disable-next-line react-hooks/exhaustive-deps
-  const jmspCaption = useMemo(() => ch4Caption('鸡毛蒜皮', 'Move 3 steps — capture all the enemy pieces to win!', () => setRulesOpen(true)), [])
+  const jmspCaption = useMemo(() => ch4Caption('鸡毛蒜皮', 'Move 3 steps and land on the other team\'s piece to catch it!', () => setRulesOpen(true)), [])
   const jmspRules = (
     <>
       <p style={{margin:'0 0 10px'}}>Each player starts with <b>4 pieces</b>. Blue goes first.</p>
@@ -5397,7 +5409,7 @@ function CatMousePage() {
   const CM_LABELS: Record<'X'|'O', string> = { X: 'Robber', O: 'Cop' }
   const modeSelector = <ModeSelector mode={mode} onReset={resetGame} />
   // eslint-disable-next-line react-hooks/exhaustive-deps
-  const cmCaption = useMemo(() => ch4Caption('Cops vs Robbers', 'The cop chases the robber — catch it to win!', () => setRulesOpen(true)), [])
+  const cmCaption = useMemo(() => ch4Caption('Cops vs Robbers', 'The cop is chasing the robber — catch it to win!', () => setRulesOpen(true)), [])
   const cmRules = (
     <>
       <RuleSteps steps={[
@@ -5966,13 +5978,13 @@ const CS4_CFG: CSCfg = {
   size: 4, colors: CS4_COLORS, boxH: 2, boxW: 2,
   solution: CS4_SOL, puzzle: CS4_PUZZLE,
   trayOrder: [1, 2, 3, 0],   // RED, YELLOW, GREEN, BLUE
-  caption: <><b>Color Sudoku:</b> Fill the 4×4 grid so each row, column &amp; 2×2 box has all 4 colors!</>,
+  caption: <><b>Color Sudoku:</b> Every row, column, and box needs one of each color!</>,
 }
 const CS6_CFG: CSCfg = {
   size: 6, colors: CS6_COLORS, boxH: 2, boxW: 3,
   solution: CS6_SOL, puzzle: CS6_PUZZLE,
   trayOrder: [1, 2, 3, 0, 4, 5],   // RED, YELLOW, GREEN, BLUE, PURPLE, ORANGE
-  caption: <><b>Color Sudoku:</b> Fill the 6×6 grid so each row, column &amp; 2×3 box has all 6 colors!</>,
+  caption: <><b>Color Sudoku:</b> Every row, column, and box needs one of each color!</>,
 }
 
 function CS1Page() {
@@ -6332,7 +6344,7 @@ function CS1Page() {
   )
 
   // eslint-disable-next-line react-hooks/exhaustive-deps
-  const caption = useMemo(() => <><b>Each box needs all 4 colors</b> — drag the missing dot into place!</>, [])
+  const caption = useMemo(() => <>Drag the dot to where it belongs — every box needs all 4 colors!</>, [])
 
   if (isLandscape) {
     return (
@@ -6582,7 +6594,7 @@ function LookAndFind({ colors, cols, rows, numRounds, dotCount, maxDotD, flipPro
       else {
         setRound(r => r + 1)
         setGame(prev => lafNextRound(prev.tiles, numColors, dotCount))
-        if (flipPrompt) { lafPlayNewRound(); showThenFlip() }
+        if (flipPrompt) { lafPlayNewRound(); showThenFlip() } else { lafPlayNewRound() }
       }
     }, 600)
     return () => clearTimeout(timer)
@@ -6592,6 +6604,7 @@ function LookAndFind({ colors, cols, rows, numRounds, dotCount, maxDotD, flipPro
     if (!active || roundDone || tiles[i].found || tiles[i].wrong) return
     const isMatch = tiles[i].dots.every((d, j) => d === prompt[j])
     if (isMatch) {
+      playSound('score')
       // Step 1: show 🎉 (ticking)
       setGame(prev => ({
         ...prev,
@@ -6638,7 +6651,7 @@ function LookAndFind({ colors, cols, rows, numRounds, dotCount, maxDotD, flipPro
   const dotDRaw = dotCount === 2 ? Math.round(tile * 0.72) : Math.floor((sq - gap4) / 2)
   const dotD = maxDotD != null ? Math.min(dotDRaw, maxDotD) : dotDRaw
 
-  const caption = useMemo(() => <><b>Look and find:</b> tap every tile that matches the pattern!</>, [])
+  const caption = useMemo(() => <>Tap every tile that looks the same as the one at the top!</>, [])
 
   // Shared prompt face content
   const promptFace = dotCount === 4 ? (
@@ -6766,6 +6779,7 @@ function MahjongPage() {
       const prev = tiles.find(t => t.id === selected)
       if (prev && !prev.removed && prev.type === tile.type) {
         // Match! Animate then remove
+        playSound('score')
         const pair: ReadonlySet<number> = new Set([id, selected])
         setMatching(pair)
         setSelected(null)
@@ -6798,7 +6812,7 @@ function MahjongPage() {
   const tileH = Math.round(tileW * ASPECT)
 
   const caption = useMemo(() => (
-    <><b>Mahjong!</b> Tap two matching tiles to remove them.</>
+    <>Find two tiles that look the same and tap them!</>
   ), [])
 
   return (
@@ -6957,6 +6971,7 @@ function MahjongL2Page() {
     } else {
       const prev = tiles[selected]
       if (prev && !prev.removed && prev.type === tile.type) {
+        playSound('score')
         const pair = new Set([idx, selected]) as ReadonlySet<number>
         setMatching(pair)
         setSelected(null)
@@ -6995,7 +7010,7 @@ function MahjongL2Page() {
   const tileToSrc = (t: number) => MJ2_ALL_SRCS[Math.floor(t / 9)][t % 9]
 
   const caption = useMemo(() => (
-    <><b>Mahjong Level 2!</b> Only top tiles (bright) can be tapped. Match pairs to uncover tiles below.</>
+    <>Tap two bright matching tiles to uncover the ones hiding below!</>
   ), [])
 
   return (
@@ -7095,8 +7110,8 @@ const GAMES: GameDef[] = [
   },
   {
     id: 'red-dot-jump',
-    title: 'Red Dot Jump',
-    emoji: '🔴',
+    title: 'Dinosaur Jump',
+    emoji: '🦖',
     group: 'Action',
     pages: [Ch3Page1, Ch3Page1L2, Ch3Page1L3],
     completion: { text: 'Woohoo!' },
@@ -7135,7 +7150,7 @@ const GAMES: GameDef[] = [
   },
   {
     id: 'dot-triangles',
-    title: 'Dot Triangles',
+    title: 'Dots & Triangles',
     emoji: '🔺',
     group: 'Board Games',
     pages: [DotTrianglesPage],
