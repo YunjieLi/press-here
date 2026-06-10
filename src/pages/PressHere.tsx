@@ -1,4 +1,4 @@
-import { useState, useRef, useEffect, useLayoutEffect, createContext, useContext, useMemo } from 'react'
+import React, { useState, useRef, useEffect, useLayoutEffect, createContext, useContext, useMemo } from 'react'
 
 const completionGifs = Object.values(import.meta.glob('../completion/*.gif', { eager: true, query: '?url', import: 'default' })) as string[]
 function randomCompletionGif() { return completionGifs[Math.floor(Math.random() * completionGifs.length)] }
@@ -58,8 +58,23 @@ const PILE_Y = [12, 45, 72, 52, 85, 22, 35, 65, 80, 28, 10, 50, 30, 90, 68]
 const PILED_RIGHT: { x: number; y: number }[] = PILE_Y.map(y => ({ x: 100 - RX, y }))
 
 const CaptionCtx    = createContext<(n: React.ReactNode) => void>(() => {})
+const SetSpeakCtx   = createContext<(t: string) => void>(() => {})
 const DoneCtx       = createContext<(done: boolean) => void>(() => {})
 const PageActiveCtx = createContext<boolean>(true)
+
+function extractText(node: React.ReactNode): string {
+  if (node == null || typeof node === 'boolean') return ''
+  if (typeof node === 'string') return node
+  if (typeof node === 'number') return String(node)
+  if (Array.isArray(node)) return node.map(extractText).join('')
+  if (React.isValidElement(node)) {
+    const t = node.type as unknown
+    // skip interactive widgets whose text shouldn't be spoken
+    if (typeof t === 'function' && (t as { name?: string }).name === 'ShowRulesButton') return ''
+    return extractText((node.props as { children?: React.ReactNode }).children)
+  }
+  return ''
+}
 
 type Ch2DotState = { x: number; y: number; vx: number; vy: number; color: string }
 type Ch2StaticDot = { id: string; color: string; x: number; y: number; vx?: number; vy?: number }
@@ -118,9 +133,15 @@ function playChapterComplete() {
 }
 
 function IntroText({ children }: { children: React.ReactNode }) {
-  const active     = useContext(PageActiveCtx)
-  const setCaption = useContext(CaptionCtx)
-  useLayoutEffect(() => { if (active) setCaption(children) })
+  const active       = useContext(PageActiveCtx)
+  const setCaption   = useContext(CaptionCtx)
+  const setSpeakText = useContext(SetSpeakCtx)
+  useLayoutEffect(() => {
+    if (active) {
+      setCaption(children)
+      setSpeakText(extractText(children).trim())
+    }
+  })
   return null
 }
 
@@ -2141,7 +2162,7 @@ function ReplayIconBtn({ onClick, style }: { onClick: () => void; style?: React.
         width: 34, height: 34, borderRadius: '50%',
         border: '1.5px solid #d0ccc5', background: '#fff',
         cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center',
-        boxShadow: '0 1px 4px rgba(0,0,0,0.08)', flexShrink: 0,
+        flexShrink: 0,
         ...style,
       }}
     >
@@ -3468,7 +3489,7 @@ function SpeakButton({ text }: { text: string }) {
         width: 34, height: 34, borderRadius: '50%',
         border: '1.5px solid #d0ccc5', background: '#fff',
         cursor: 'pointer', display: 'inline-flex', alignItems: 'center', justifyContent: 'center',
-        boxShadow: '0 1px 4px rgba(0,0,0,0.08)', flexShrink: 0,
+        flexShrink: 0,
         verticalAlign: 'middle', marginRight: 8, color: speaking ? '#FDD302' : '#888',
         transition: 'color 0.15s',
       }}
@@ -3481,7 +3502,7 @@ function SpeakButton({ text }: { text: string }) {
 function ch4Caption(name: string, desc: string, onShowRules: () => void): React.ReactNode {
   const punctuated = /[.!?]$/.test(desc) ? desc : desc + '.'
   return (
-    <><SpeakButton text={`${name}: ${punctuated}`} /><span style={{ fontWeight: 700 }}>{name}:</span> {punctuated}{' '}<ShowRulesButton onClick={onShowRules} /></>
+    <><span style={{ fontWeight: 700 }}>{name}:</span> {punctuated}{' '}<ShowRulesButton onClick={onShowRules} /></>
   )
 }
 
@@ -6020,13 +6041,13 @@ const CS4_CFG: CSCfg = {
   size: 4, colors: CS4_COLORS, boxH: 2, boxW: 2,
   solution: CS4_SOL, puzzle: CS4_PUZZLE,
   trayOrder: [1, 2, 3, 0],   // RED, YELLOW, GREEN, BLUE
-  caption: <><SpeakButton text="Color Sudoku: Every row, column, and box needs one of each color!" /><b>Color Sudoku:</b> Every row, column, and box needs one of each color!</>,
+  caption: <><b>Color Sudoku:</b> Every row, column, and box needs one of each color!</>,
 }
 const CS6_CFG: CSCfg = {
   size: 6, colors: CS6_COLORS, boxH: 2, boxW: 3,
   solution: CS6_SOL, puzzle: CS6_PUZZLE,
   trayOrder: [1, 2, 3, 0, 4, 5],   // RED, YELLOW, GREEN, BLUE, PURPLE, ORANGE
-  caption: <><SpeakButton text="Color Sudoku: Every row, column, and box needs one of each color!" /><b>Color Sudoku:</b> Every row, column, and box needs one of each color!</>,
+  caption: <><b>Color Sudoku:</b> Every row, column, and box needs one of each color!</>,
 }
 
 function CS1Page() {
@@ -6386,7 +6407,7 @@ function CS1Page() {
   )
 
   // eslint-disable-next-line react-hooks/exhaustive-deps
-  const caption = useMemo(() => <><SpeakButton text="Drag the dot to where it belongs — every box needs all 4 colors!" />Drag the dot to where it belongs — every box needs all 4 colors!</>, [])
+  const caption = useMemo(() => <>Drag the dot to where it belongs — every box needs all 4 colors!</>, [])
 
   if (isLandscape) {
     return (
@@ -6693,7 +6714,7 @@ function LookAndFind({ colors, cols, rows, numRounds, dotCount, maxDotD, flipPro
   const dotDRaw = dotCount === 2 ? Math.round(tile * 0.72) : Math.floor((sq - gap4) / 2)
   const dotD = maxDotD != null ? Math.min(dotDRaw, maxDotD) : dotDRaw
 
-  const caption = useMemo(() => <><SpeakButton text="Tap every tile that looks the same as the one at the top!" />Tap every tile that looks the same as the one at the top!</>, [])
+  const caption = useMemo(() => <>Tap every tile that looks the same as the one at the top!</>, [])
 
   // Shared prompt face content
   const promptFace = dotCount === 4 ? (
@@ -6854,7 +6875,7 @@ function MahjongPage() {
   const tileH = Math.round(tileW * ASPECT)
 
   const caption = useMemo(() => (
-    <><SpeakButton text="Find two tiles that look the same and tap them!" />Find two tiles that look the same and tap them!</>
+    <>Find two tiles that look the same and tap them!</>
   ), [])
 
   return (
@@ -7052,7 +7073,7 @@ function MahjongL2Page() {
   const tileToSrc = (t: number) => MJ2_ALL_SRCS[Math.floor(t / 9)][t % 9]
 
   const caption = useMemo(() => (
-    <><SpeakButton text="Tap two bright matching tiles to uncover the ones hiding below!" />Tap two bright matching tiles to uncover the ones hiding below!</>
+    <>Tap two bright matching tiles to uncover the ones hiding below!</>
   ), [])
 
   return (
@@ -7391,10 +7412,9 @@ function GameSwitcherPanel({ show, currentGameId, onSelect, onClose }: {
                         border: `1.5px solid ${active ? '#222' : '#e4e0d8'}`,
                         cursor: 'pointer', fontFamily: 'inherit',
                         transition: 'all 0.12s ease',
-                        boxShadow: active ? 'none' : '0 1px 3px rgba(0,0,0,0.05)',
                       }}
-                      onMouseEnter={e => { if (!active) { e.currentTarget.style.borderColor = '#bbb'; e.currentTarget.style.boxShadow = '0 2px 8px rgba(0,0,0,0.10)' } }}
-                      onMouseLeave={e => { if (!active) { e.currentTarget.style.borderColor = '#e4e0d8'; e.currentTarget.style.boxShadow = '0 1px 3px rgba(0,0,0,0.05)' } }}
+                      onMouseEnter={e => { if (!active) { e.currentTarget.style.borderColor = '#bbb' } }}
+                      onMouseLeave={e => { if (!active) { e.currentTarget.style.borderColor = '#e4e0d8' } }}
                     >
                       <span style={{ fontSize: 26, lineHeight: 1 }}>{game.emoji}</span>
                       <span style={{
@@ -7420,6 +7440,7 @@ function GameSwitcherPanel({ show, currentGameId, onSelect, onClose }: {
 export default function PressHere() {
   const [page,         setPage]       = useState(0)
   const [caption,      setCaption]    = useState<React.ReactNode>('')
+  const [speakText,    setSpeakText]  = useState('')
   const [done,         setDone]       = useState(false)
   const [globalKey,    setGlobalKey]  = useState(0)
   const [mountedPages, setMountedPages] = useState<Set<number>>(() => new Set([0, 1]))
@@ -7456,6 +7477,7 @@ export default function PressHere() {
   const isLast  = page === TOTAL - 1
 
   function nav(next: number) {
+    window.speechSynthesis.cancel()
     setPage(next)
     setDone(false)
     setMountedPages(prev => {
@@ -7526,6 +7548,7 @@ export default function PressHere() {
 
   return (
     <Ch2ShapesCtx.Provider value={ch2Shapes}>
+    <SetSpeakCtx.Provider value={setSpeakText}>
     <CaptionCtx.Provider value={setCaption}>
       <DoneCtx.Provider value={setDone}>
         <HandoffCtx.Provider value={handoffRef}>
@@ -7566,11 +7589,10 @@ export default function PressHere() {
                     border: '1.5px solid #e0e0e0',
                     fontSize: isMobile ? 12 : 13, fontWeight: 700, color: '#555',
                     fontFamily: 'inherit', cursor: 'pointer',
-                    boxShadow: '0 1px 3px rgba(0,0,0,0.07)',
                     transition: 'all 0.15s ease',
                   }}
-                  onMouseEnter={e => { e.currentTarget.style.borderColor = '#bbb'; e.currentTarget.style.color = '#222'; e.currentTarget.style.boxShadow = '0 2px 8px rgba(0,0,0,0.12)' }}
-                  onMouseLeave={e => { e.currentTarget.style.borderColor = '#e0e0e0'; e.currentTarget.style.color = '#555'; e.currentTarget.style.boxShadow = '0 1px 3px rgba(0,0,0,0.07)' }}
+                  onMouseEnter={e => { e.currentTarget.style.borderColor = '#bbb'; e.currentTarget.style.color = '#222' }}
+                  onMouseLeave={e => { e.currentTarget.style.borderColor = '#e0e0e0'; e.currentTarget.style.color = '#555' }}
                 >
                   <span style={{ fontSize: isMobile ? 15 : 17 }}>{currentGame.emoji}</span>
                   {!isMobile && <span style={{ maxWidth: 100, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{currentGame.title}</span>}
@@ -7598,8 +7620,9 @@ export default function PressHere() {
 
             {/* Caption + Next button */}
             <div style={{ position: 'relative', display: 'flex', alignItems: 'center', justifyContent: 'flex-start', marginTop: isMobile ? 8 : 14, minHeight: isMobile ? 38 : 46 }}>
-              <div style={{ fontSize: 'clamp(13px,2vw,18px)', fontWeight: 600, color: '#444', lineHeight: 1.4, maxWidth: 'calc(100% - 190px)' }}>
-                {caption}
+              <div style={{ display: 'flex', alignItems: 'center', gap: 0, fontSize: 'clamp(13px,2vw,18px)', fontWeight: 600, color: '#444', lineHeight: 1.4, maxWidth: 'calc(100% - 190px)' }}>
+                {speakText && <SpeakButton text={speakText} />}
+                <span>{caption}</span>
               </div>
               <button
                 onClick={isLast ? () => setWellDone(true) : () => nav(page + 1)}
@@ -7636,6 +7659,7 @@ export default function PressHere() {
         </HandoffCtx.Provider>
       </DoneCtx.Provider>
     </CaptionCtx.Provider>
+    </SetSpeakCtx.Provider>
     </Ch2ShapesCtx.Provider>
   )
 }
