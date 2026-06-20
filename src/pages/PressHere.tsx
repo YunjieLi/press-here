@@ -7468,6 +7468,367 @@ function MahjongL2Page() {
   )
 }
 
+// ── Growing Tree (force-directed) ─────────────────────────────────────────────
+
+const GT_COLORS = ['#ef4444', '#f97316', '#eab308', '#22c55e', '#3b82f6', '#6366f1', '#a855f7']
+const GT_VW = 500, GT_VH = 600
+const GT_R = 12
+const GT_MAX_LV = 7
+const GT_ROOT_Y = 520  // L1 near center bottom
+const GT_ROOT_X = GT_VW / 2
+const GT_DAMP = 0.74
+const GT_LINK_K = 0.09
+const GT_REPEL = 4200
+const GT_CX_K = 0.025
+const GT_LY_K = 0.06
+// Spring rest distance per child level (lower level = bigger gap)
+// L2 spring is intentionally longer than the y-gap (110) so the trunk can settle at a natural slant
+// Each rest is ~8% longer than y-gap so single-child links have a natural horizontal lean
+const GT_LINK_DISTS = [0, 0, 118, 92, 70, 56, 46, 38]
+// Cumulative y-offset above root for each level
+const GT_LEVEL_Y_CUM = [0, 0, 110, 195, 260, 312, 354, 389]
+
+function gtLY(level: number): number {
+  return GT_ROOT_Y - (GT_LEVEL_Y_CUM[Math.min(level, GT_MAX_LV)] ?? 389)
+}
+
+function gtLinkD(childLevel: number): number {
+  return GT_LINK_DISTS[Math.min(childLevel, GT_MAX_LV)] ?? 35
+}
+
+interface GTNode {
+  id: string; level: number; parentId: string | null
+  x: number; y: number; vx: number; vy: number
+  slots: string[]; count: number
+  born: number  // Date.now() at creation; 0 for initial nodes (always fully visible)
+}
+
+let _gtId = 0
+function gtMkNode(level: number, parentId: string | null, x: number, y: number, born = Date.now()): GTNode {
+  return { id: 'gt' + (++_gtId), level, parentId, x, y, vx: (Math.random() - .5) * 0.5, vy: (Math.random() - .5) * 0.5, slots: [], count: 0, born }
+}
+
+function gtInitTree(): Map<string, GTNode> {
+  const m = new Map<string, GTNode>()
+  const root = gtMkNode(1, null, GT_ROOT_X, gtLY(1), 0)
+  m.set(root.id, root)
+  // Slight random x-offset so the longer spring settles at a natural lean
+  const tiltX = (Math.random() - 0.5) * 30
+  const l2 = gtMkNode(2, root.id, GT_ROOT_X + tiltX, gtLY(2), 0)
+  m.set(l2.id, l2); root.slots.push(l2.id)
+  const halfSpread = gtLinkD(3) * 0.55
+  for (let j = 0; j < 2; j++) {
+    const l3 = gtMkNode(3, l2.id, GT_ROOT_X + (j * 2 - 1) * halfSpread, gtLY(3), 0)
+    m.set(l3.id, l3); l2.slots.push(l3.id)
+  }
+  root.count = 1; l2.count = 2
+  return m
+}
+
+function gtGetVis(nodes: Map<string, GTNode>): Set<string> {
+  const vis = new Set<string>()
+  function walk(id: string) {
+    const n = nodes.get(id); if (!n) return
+    vis.add(id)
+    for (let i = 0; i < n.count && i < n.slots.length; i++) walk(n.slots[i])
+  }
+  for (const [id, n] of nodes) if (!n.parentId) { walk(id); break }
+  return vis
+}
+
+function gtGetEdges(nodes: Map<string, GTNode>, vis: Set<string>): [string, string][] {
+  const es: [string, string][] = []
+  for (const id of vis) {
+    const n = nodes.get(id)!
+    for (let i = 0; i < n.count && i < n.slots.length; i++)
+      if (vis.has(n.slots[i])) es.push([id, n.slots[i]])
+  }
+  return es
+}
+
+function gtSubtreeBounds(
+  id: string, nodes: Map<string, GTNode>, vis: Set<string>
+): { minX: number; maxX: number; ids: string[] } {
+  const n = nodes.get(id)!
+  let minX = n.x, maxX = n.x
+  const ids: string[] = [id]
+  for (let i = 0; i < n.count && i < n.slots.length; i++) {
+    const cid = n.slots[i]
+    if (vis.has(cid)) {
+      const cb = gtSubtreeBounds(cid, nodes, vis)
+      minX = Math.min(minX, cb.minX); maxX = Math.max(maxX, cb.maxX)
+      ids.push(...cb.ids)
+    }
+  }
+  return { minX, maxX, ids }
+}
+
+function gtRunTick(nodes: Map<string, GTNode>, dragId: string | null): boolean {
+  const vis = gtGetVis(nodes)
+  const ns = [...vis].map(id => nodes.get(id)!)
+  const es = gtGetEdges(nodes, vis)
+  const len = ns.length
+  const fx = new Float32Array(len), fy = new Float32Array(len)
+  const idx = new Map(ns.map((n, i) => [n.id, i]))
+
+  // Level-based link springs (lower levels stretch further)
+  for (const [pid, cid] of es) {
+    const pi = idx.get(pid)!, ci = idx.get(cid)!
+    const dx = ns[ci].x - ns[pi].x, dy = ns[ci].y - ns[pi].y
+    const d = Math.hypot(dx, dy) || 1
+    const f = GT_LINK_K * (d - gtLinkD(ns[ci].level))
+    const ffx = f * dx / d, ffy = f * dy / d
+    fx[pi] += ffx; fy[pi] += ffy; fx[ci] -= ffx; fy[ci] -= ffy
+  }
+
+  // Repulsion — ramp in over 600ms for new nodes so they don't jiggle existing ones
+  const now = Date.now()
+  for (let i = 0; i < len; i++) for (let j = i + 1; j < len; j++) {
+    const ri = ns[i].born === 0 ? 1 : Math.min(1, (now - ns[i].born) / 600)
+    const rj = ns[j].born === 0 ? 1 : Math.min(1, (now - ns[j].born) / 600)
+    const ramp = Math.min(ri, rj)
+    if (ramp === 0) continue
+    const dx = ns[j].x - ns[i].x, dy = ns[j].y - ns[i].y
+    const d2 = dx * dx + dy * dy + 0.1, d = Math.sqrt(d2), f = GT_REPEL / d2 * ramp
+    fx[i] -= f * dx / d; fy[i] -= f * dy / d
+    fx[j] += f * dx / d; fy[j] += f * dy / d
+  }
+
+  // X-centering (strong anchor at root, very weak elsewhere so trunk can lean)
+  // Y-level gravity pulls each node toward its target depth
+  for (let i = 0; i < len; i++) {
+    // No horizontal centering — L1 can sit anywhere, deeper nodes lean freely
+    const cxK = 0
+    fx[i] -= cxK * (ns[i].x - GT_ROOT_X)
+    fy[i] -= GT_LY_K * (ns[i].y - gtLY(ns[i].level))
+  }
+
+  // Subtree separation: prevent branch crossings by keeping sibling subtrees non-overlapping
+  const SEP_K = 0.07
+  const SEP_GAP = GT_R * 2.5
+  for (const id of vis) {
+    const n = nodes.get(id)!
+    const kids = n.slots.slice(0, n.count).filter(cid => vis.has(cid))
+    for (let i = 0; i < kids.length - 1; i++) {
+      const lb = gtSubtreeBounds(kids[i], nodes, vis)
+      const rb = gtSubtreeBounds(kids[i + 1], nodes, vis)
+      const overlap = lb.maxX + SEP_GAP - rb.minX
+      if (overlap > 0) {
+        const force = overlap * SEP_K
+        for (const lid of lb.ids) { const ii = idx.get(lid); if (ii !== undefined) fx[ii] -= force }
+        for (const rid of rb.ids) { const ii = idx.get(rid); if (ii !== undefined) fx[ii] += force }
+      }
+    }
+  }
+
+  let anyMoving = false
+  for (let i = 0; i < len; i++) {
+    const n = ns[i]; if (n.id === dragId) continue
+    n.vx = (n.vx + fx[i]) * GT_DAMP
+    n.vy = (n.vy + fy[i]) * GT_DAMP
+    n.x = Math.max(GT_R, Math.min(GT_VW - GT_R, n.x + n.vx))
+    n.y = Math.max(GT_R, Math.min(GT_VH - GT_R, n.y + n.vy))
+    if (Math.abs(n.vx) + Math.abs(n.vy) > 0.06) anyMoving = true
+  }
+
+  // Keep L1 within the middle third of the canvas horizontally
+  for (const n of ns) {
+    if (n.level !== 1) continue
+    const lo = GT_VW * 0.45, hi = GT_VW * 0.55
+    if (n.x < lo) { n.x = lo; if (n.vx < 0) n.vx = 0 }
+    else if (n.x > hi) { n.x = hi; if (n.vx > 0) n.vx = 0 }
+  }
+
+  // Clamp L1→L2 angle to ±5° from vertical
+  const TAN5 = Math.tan(5 * Math.PI / 180)
+  for (const n of ns) {
+    if (n.level !== 2 || !n.parentId) continue
+    const p = nodes.get(n.parentId)
+    if (!p) continue
+    const maxDx = TAN5 * Math.abs(n.y - p.y)
+    const dx = n.x - p.x
+    if (Math.abs(dx) > maxDx) { n.x = p.x + Math.sign(dx) * maxDx; n.vx = 0 }
+  }
+
+  return anyMoving || dragId !== null
+}
+
+const gtRules = (
+  <RuleSteps steps={[
+    {
+      svg: (
+        <svg viewBox="0 0 80 80" style={{ width: '100%', height: '100%' }}>
+          <line x1={40} y1={60} x2={25} y2={35} stroke="#f97316" strokeWidth={2} strokeOpacity={0.5} />
+          <line x1={40} y1={60} x2={55} y2={35} stroke="#f97316" strokeWidth={2} strokeOpacity={0.5} />
+          <circle cx={40} cy={60} r={10} fill="#ef4444" stroke="#fff" strokeWidth={2} />
+          <circle cx={25} cy={35} r={8} fill="#f97316" stroke="#fff" strokeWidth={2} />
+          <circle cx={55} cy={35} r={8} fill="#f97316" stroke="#fff" strokeWidth={2} />
+          <text x={40} y={60} textAnchor="middle" dominantBaseline="middle" fontSize={13} fill="#fff">+</text>
+        </svg>
+      ),
+      label: 'Tap a dot to add or remove branches (0–4)',
+    },
+    {
+      svg: (
+        <svg viewBox="0 0 80 80" style={{ width: '100%', height: '100%' }}>
+          {GT_COLORS.map((c, i) => (
+            <circle key={i} cx={7 + i * 10} cy={40} r={5} fill={c} stroke="#fff" strokeWidth={1.5} />
+          ))}
+          <text x={40} y={62} textAnchor="middle" fontSize={8} fill="#888">L1 → L7</text>
+        </svg>
+      ),
+      label: 'Rainbow colors show depth — up to 7 levels!',
+    },
+    {
+      svg: (
+        <svg viewBox="0 0 80 80" style={{ width: '100%', height: '100%' }}>
+          <circle cx={40} cy={40} r={10} fill="#3b82f6" stroke="#fff" strokeWidth={2} />
+          <path d="M47 33 L62 22" stroke="#aaa" strokeWidth={1.5} strokeLinecap="round" strokeDasharray="3 2" />
+          <text x={40} y={58} textAnchor="middle" fontSize={8} fill="#888">drag to move</text>
+        </svg>
+      ),
+      label: 'Drag any dot to rearrange the tree',
+    },
+  ]} />
+)
+
+function GrowingTreePage() {
+  const nodesRef = useRef<Map<string, GTNode>>(gtInitTree())
+  const [, setTick] = useState(0)
+  const svgRef = useRef<SVGSVGElement>(null)
+  const dragIdRef = useRef<string | null>(null)
+  const movedRef = useRef(false)
+  const dragStartRef = useRef<{ x: number; y: number } | null>(null)
+  const alphaRef = useRef(1.0)
+  const rafRef = useRef<number>()
+  const [rulesOpen, setRulesOpen] = useState(false)
+
+  useEffect(() => {
+    let alive = true
+    const loop = () => {
+      if (!alive) return
+      if (alphaRef.current > 0.005 || dragIdRef.current) {
+        const moving = gtRunTick(nodesRef.current, dragIdRef.current)
+        if (moving) {
+          setTick(t => t + 1)
+          if (!dragIdRef.current) alphaRef.current *= 0.992
+        } else {
+          alphaRef.current = 0
+        }
+      }
+      rafRef.current = requestAnimationFrame(loop)
+    }
+    rafRef.current = requestAnimationFrame(loop)
+    return () => { alive = false; if (rafRef.current) cancelAnimationFrame(rafRef.current) }
+  }, [])
+
+  function svgPt(e: React.PointerEvent) {
+    const svg = svgRef.current; if (!svg) return null
+    const p = svg.createSVGPoint(); p.x = e.clientX; p.y = e.clientY
+    return p.matrixTransform(svg.getScreenCTM()!.inverse())
+  }
+
+  function onNodeDown(e: React.PointerEvent, id: string) {
+    e.stopPropagation()
+    e.currentTarget.setPointerCapture(e.pointerId)
+    dragIdRef.current = id; movedRef.current = false
+    const pt = svgPt(e); if (pt) dragStartRef.current = { x: pt.x, y: pt.y }
+    alphaRef.current = Math.max(alphaRef.current, 0.3)
+  }
+
+  function onSVGMove(e: React.PointerEvent) {
+    if (!dragIdRef.current) return
+    const pt = svgPt(e); if (!pt) return
+    if (dragStartRef.current) {
+      if (Math.hypot(pt.x - dragStartRef.current.x, pt.y - dragStartRef.current.y) > 8) movedRef.current = true
+    }
+    if (movedRef.current) {
+      const n = nodesRef.current.get(dragIdRef.current); if (!n) return
+      n.x = Math.max(GT_R, Math.min(GT_VW - GT_R, pt.x))
+      n.y = Math.max(GT_R, Math.min(GT_VH - GT_R, pt.y))
+      n.vx = 0; n.vy = 0
+    }
+  }
+
+  function onSVGUp() {
+    if (dragIdRef.current && !movedRef.current) onTap(dragIdRef.current)
+    dragIdRef.current = null; movedRef.current = false; dragStartRef.current = null
+    alphaRef.current = Math.max(alphaRef.current, 0.5)
+  }
+
+  function onTap(id: string) {
+    const nodes = nodesRef.current, n = nodes.get(id)
+    if (!n || n.level >= GT_MAX_LV) return
+    const next = (n.count + 1) % 5
+    while (n.slots.length < next) {
+      const si = n.slots.length
+      const childLinkD = gtLinkD(n.level + 1)
+      const spread = (si - (next - 1) / 2) * childLinkD * 0.6
+      // Single children get a random tilt direction; place at exact spring rest distance
+      // so spring force = 0 at birth → existing nodes feel nothing
+      const tilt = next === 1 ? (Math.random() - 0.5) * childLinkD * 0.5 : 0
+      const targetY = gtLY(n.level + 1)
+      const dy = targetY - n.y
+      const dxRest = Math.sqrt(Math.max(0, childLinkD * childLinkD - dy * dy))
+      const dir = spread + tilt !== 0 ? Math.sign(spread + tilt) : (Math.random() > 0.5 ? 1 : -1)
+      const child = gtMkNode(n.level + 1, id, n.x + dir * dxRest, targetY)
+      child.vx = 0; child.vy = 0
+      nodes.set(child.id, child); n.slots.push(child.id)
+    }
+    n.count = next
+    alphaRef.current = Math.max(alphaRef.current, 0.08)
+    setTick(t => t + 1)
+  }
+
+  const nodes = nodesRef.current
+  const vis = gtGetVis(nodes)
+  const visNodes = [...vis].map(id => nodes.get(id)!)
+  const edges = gtGetEdges(nodes, vis)
+
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  const caption = useMemo(() => ch4Caption('Growing Tree', 'Tap a dot to grow or prune branches — drag to rearrange!', () => setRulesOpen(true)), [])
+
+  return (
+    <>
+      {rulesOpen && <Ch4RulesModal title="How to play Growing Tree" onClose={() => setRulesOpen(false)}>{gtRules}</Ch4RulesModal>}
+      <div style={{ ...ch4CanvasStyle, flex: 1, display: 'flex', alignItems: 'center', justifyContent: 'center', overflow: 'hidden' }}>
+        <svg ref={svgRef} viewBox={`0 0 ${GT_VW} ${GT_VH}`}
+          style={{ width: '100%', height: '100%', display: 'block', touchAction: 'none', userSelect: 'none' }}
+          onPointerMove={onSVGMove}
+          onPointerUp={onSVGUp}
+          onPointerCancel={() => { dragIdRef.current = null }}
+        >
+          {edges.map(([pid, cid]) => {
+            const p = nodes.get(pid)!, c = nodes.get(cid)!
+            const edgeAge = c.born === 0 ? Infinity : Date.now() - c.born
+            return (
+              <line key={pid + '-' + cid}
+                x1={p.x} y1={p.y} x2={c.x} y2={c.y}
+                stroke={GT_COLORS[c.level - 1]} strokeWidth={2.5}
+                strokeOpacity={Math.min(0.45, edgeAge / 350 * 0.45)} strokeLinecap="round"
+              />
+            )
+          })}
+          {visNodes.map(n => {
+            const nodeAge = n.born === 0 ? Infinity : Date.now() - n.born
+            return (
+              <circle key={n.id} cx={n.x} cy={n.y} r={GT_R}
+                fill={GT_COLORS[n.level - 1]}
+                stroke="#fff" strokeWidth={2.5}
+                opacity={Math.min(1, nodeAge / 350)}
+                style={{ cursor: 'grab' }}
+                onPointerDown={e => onNodeDown(e, n.id)}
+              />
+            )
+          })}
+        </svg>
+      </div>
+      <IntroText>{caption}</IntroText>
+      <SetDone done={true} celebrate={false} />
+    </>
+  )
+}
+
 // ── Game registry ─────────────────────────────────────────────────────────────
 
 type CompletionCfg = {
@@ -7501,6 +7862,14 @@ const GAMES: GameDef[] = [
     group: 'Drawing',
     pages: [...Ch2DotSlots],
     completion: { text: 'Great job!' },
+  },
+  {
+    id: 'growing-tree',
+    title: 'Growing Tree',
+    emoji: '🌳',
+    group: 'Drawing',
+    pages: [GrowingTreePage],
+    completion: { text: 'Keep exploring!', emojiIcon: '🌿' },
   },
   {
     id: 'red-dot-jump',
