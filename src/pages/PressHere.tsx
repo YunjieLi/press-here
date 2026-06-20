@@ -7812,8 +7812,16 @@ const GAMES: GameDef[] = [
     title: 'Intro',
     emoji: '🟡',
     group: 'Getting Started',
-    pages: [...CHAPTER1_PAGES, Chapter2Page1, Chapter2Page3],
+    pages: [...CHAPTER1_PAGES, Chapter2Page1],
     completion: { text: 'Well done!' },
+  },
+  {
+    id: 'circle-burst',
+    title: 'Circle Burst',
+    emoji: '🧨',
+    group: 'Drawing',
+    pages: [Chapter2Page3],
+    completion: { text: 'Beautiful!' },
   },
   {
     id: 'connect-dots',
