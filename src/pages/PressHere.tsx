@@ -7794,7 +7794,7 @@ function GrowingTreePage() {
 const SN_COLS = 15, SN_ROWS = 18, SN_CELL = 22
 const SN_VW = SN_COLS * SN_CELL, SN_VH = SN_ROWS * SN_CELL
 const SN_R = SN_CELL * 0.38
-const SN_COLORS = ['#f97316', '#eab308', '#22c55e', '#3b82f6', '#6366f1', '#a855f7']
+const SN_WIN = 13  // red→orange→…→violet→red→…→indigo = 13 dots
 type SnDir = 'U' | 'D' | 'L' | 'R'
 type SnPt = { x: number; y: number }
 const SN_OPP: Record<SnDir, SnDir> = { U: 'D', D: 'U', L: 'R', R: 'L' }
@@ -7808,31 +7808,35 @@ function snFreeFood(snake: SnPt[]): SnPt {
   return free[Math.floor(Math.random() * free.length)]
 }
 
-function snMkPage(tickMs: number, winLen: number): React.ComponentType {
+function snMkPage(tickMs: number): React.ComponentType {
   function SnakePage() {
     const active = useContext(PageActiveCtx)
     const [, tick] = useState(0)
-    const snakeRef   = useRef<SnPt[]>([{ x: 7, y: 9 }, { x: 6, y: 9 }, { x: 5, y: 9 }])
-    const dirRef     = useRef<SnDir>('R')
-    const nextDirRef = useRef<SnDir>('R')
-    const foodRef    = useRef<SnPt>({ x: 11, y: 9 })
-    const stateRef   = useRef<'idle' | 'running' | 'dead' | 'won'>('idle')
-    const wonRef     = useRef(false)
-    const lastTRef   = useRef(0)
-    const rafRef     = useRef<number>()
-    const swipeRef   = useRef<{ x: number; y: number } | null>(null)
+    // snake positions; colors are tracked separately so body colors are fixed to eaten sequence
+    const snakeRef    = useRef<SnPt[]>([{ x: 7, y: 9 }])
+    const colorsRef   = useRef<string[]>([GT_COLORS[0]])      // head starts red
+    const foodIdxRef  = useRef(1)                              // next food = orange (idx 1)
+    const dirRef      = useRef<SnDir>('R')
+    const nextDirRef  = useRef<SnDir>('R')
+    const foodRef     = useRef<SnPt>(snFreeFood([{ x: 7, y: 9 }]))
+    const stateRef    = useRef<'idle' | 'running' | 'dead' | 'won'>('idle')
+    const wonRef      = useRef(false)
+    const lastTRef    = useRef(0)
+    const rafRef      = useRef<number>()
+    const swipeRef    = useRef<{ x: number; y: number } | null>(null)
 
     const reset = useCallback(() => {
-      snakeRef.current   = [{ x: 7, y: 9 }, { x: 6, y: 9 }, { x: 5, y: 9 }]
+      snakeRef.current   = [{ x: 7, y: 9 }]
+      colorsRef.current  = [GT_COLORS[0]]
+      foodIdxRef.current = 1
       dirRef.current     = 'R'
       nextDirRef.current = 'R'
-      foodRef.current    = snFreeFood(snakeRef.current)
+      foodRef.current    = snFreeFood([{ x: 7, y: 9 }])
       stateRef.current   = 'idle'
       lastTRef.current   = 0
       tick(n => n + 1)
     }, [])
 
-    // Arrow-key control
     useEffect(() => {
       const onKey = (e: KeyboardEvent) => {
         const map: Record<string, SnDir> = { ArrowUp: 'U', ArrowDown: 'D', ArrowLeft: 'L', ArrowRight: 'R' }
@@ -7844,7 +7848,6 @@ function snMkPage(tickMs: number, winLen: number): React.ComponentType {
       return () => window.removeEventListener('keydown', onKey)
     }, [])
 
-    // Game loop
     useEffect(() => {
       if (!active) return
       let alive = true
@@ -7856,21 +7859,24 @@ function snMkPage(tickMs: number, winLen: number): React.ComponentType {
           const { x: hx, y: hy } = snakeRef.current[0]
           const nx = hx + (dirRef.current === 'L' ? -1 : dirRef.current === 'R' ? 1 : 0)
           const ny = hy + (dirRef.current === 'U' ? -1 : dirRef.current === 'D' ? 1 : 0)
-          // Wall or self collision → dead
           if (nx < 0 || nx >= SN_COLS || ny < 0 || ny >= SN_ROWS ||
               snakeRef.current.some(p => p.x === nx && p.y === ny)) {
             stateRef.current = 'dead'; tick(n => n + 1)
             rafRef.current = requestAnimationFrame(loop); return
           }
           const ate = nx === foodRef.current.x && ny === foodRef.current.y
-          const next = [{ x: nx, y: ny }, ...snakeRef.current]
-          if (!ate) next.pop()
-          snakeRef.current = next
+          // Shift head position forward; keep tail unless ate
+          const nextSnake = [{ x: nx, y: ny }, ...snakeRef.current]
+          if (!ate) { nextSnake.pop(); colorsRef.current = colorsRef.current.slice(0, nextSnake.length) }
+          snakeRef.current = nextSnake
           if (ate) {
-            if (next.length >= winLen) {
+            // Append the eaten color to the tail
+            colorsRef.current = [...colorsRef.current, GT_COLORS[foodIdxRef.current]]
+            foodIdxRef.current = (foodIdxRef.current + 1) % GT_COLORS.length
+            if (nextSnake.length >= SN_WIN) {
               stateRef.current = 'won'; wonRef.current = true
             } else {
-              foodRef.current = snFreeFood(next)
+              foodRef.current = snFreeFood(nextSnake)
             }
           }
           tick(n => n + 1)
@@ -7898,9 +7904,11 @@ function snMkPage(tickMs: number, winLen: number): React.ComponentType {
       }
     }
 
-    const snake = snakeRef.current, food = foodRef.current, state = stateRef.current
+    const snake = snakeRef.current, colors = colorsRef.current
+    const food = foodRef.current, state = stateRef.current
     const cx = (p: SnPt) => p.x * SN_CELL + SN_CELL / 2
     const cy = (p: SnPt) => p.y * SN_CELL + SN_CELL / 2
+    const foodColor = GT_COLORS[foodIdxRef.current]
 
     return (
       <>
@@ -7917,31 +7925,22 @@ function snMkPage(tickMs: number, winLen: number): React.ComponentType {
                 fill="#ede8df" />
             ))}
 
-            {/* Food */}
-            <circle cx={cx(food)} cy={cy(food)} r={SN_R + 4} fill="#eab308" opacity={0.18} />
-            <circle cx={cx(food)} cy={cy(food)} r={SN_R} fill="#eab308" stroke="#fff" strokeWidth={2} />
+            {/* Food — shown in the color the snake will gain */}
+            <circle cx={cx(food)} cy={cy(food)} r={SN_R + 4} fill={foodColor} opacity={0.2} />
+            <circle cx={cx(food)} cy={cy(food)} r={SN_R} fill={foodColor} stroke="#fff" strokeWidth={2} />
 
-            {/* Snake — draw connections first, then dots on top */}
-            {snake.slice(1).map((p, i) => {
-              const prev = snake[i]
-              return <line key={`l${i}`}
-                x1={cx(prev)} y1={cy(prev)} x2={cx(p)} y2={cy(p)}
-                stroke={i === 0 ? RED : SN_COLORS[Math.min(Math.floor(i / 2), SN_COLORS.length - 1)]}
-                strokeWidth={SN_R * 1.7} strokeLinecap="round" />
-            })}
+            {/* Snake — dots only, colored by eaten sequence */}
             {snake.map((p, i) => (
-              <circle key={`d${i}`} cx={cx(p)} cy={cy(p)} r={SN_R}
-                fill={i === 0 ? RED : SN_COLORS[Math.min(Math.floor(i / 2), SN_COLORS.length - 1)]}
-                stroke="#fff" strokeWidth={2} />
+              <circle key={i} cx={cx(p)} cy={cy(p)} r={SN_R}
+                fill={colors[i] ?? GT_COLORS[0]} stroke="#fff" strokeWidth={2} />
             ))}
 
             {/* Score */}
-            {state !== 'idle' && state !== 'dead' && (
+            {state === 'running' && (
               <text x={SN_VW - 8} y={20} textAnchor="end" fontSize={13} fontWeight={800}
-                fill="#ccc" fontFamily="inherit">{snake.length} / {winLen}</text>
+                fill="#ccc" fontFamily="inherit">{snake.length} / {SN_WIN}</text>
             )}
 
-            {/* Overlays */}
             {state === 'idle' && (
               <text x={SN_VW / 2} y={SN_VH / 2} textAnchor="middle" dominantBaseline="middle"
                 fontSize={18} fontWeight={800} fill={RED} fontFamily="inherit">Tap or swipe to start!</text>
@@ -7958,7 +7957,7 @@ function snMkPage(tickMs: number, winLen: number): React.ComponentType {
             )}
           </svg>
         </div>
-        <IntroText>Swipe to steer — eat the dots to grow!</IntroText>
+        <IntroText>Swipe to steer — eat the rainbow dots in order!</IntroText>
         <SetDone done={wonRef.current} />
       </>
     )
@@ -7966,9 +7965,9 @@ function snMkPage(tickMs: number, winLen: number): React.ComponentType {
   return SnakePage
 }
 
-const SnakePage1 = snMkPage(260, 8)
-const SnakePage2 = snMkPage(180, 14)
-const SnakePage3 = snMkPage(120, 22)
+const SnakePage1 = snMkPage(400)
+const SnakePage2 = snMkPage(260)
+const SnakePage3 = snMkPage(160)
 
 // ── Game registry ─────────────────────────────────────────────────────────────
 
