@@ -4982,7 +4982,9 @@ function JmspPage() {
     const next: 'X'|'O' = current === 'X' ? 'O' : 'X'
     const opCount = newPieces.filter(p => p.player === next).length
     setPieces(newPieces)
-    if (opCount === 0) {
+    const opPieces = newPieces.filter(p => p.player === next)
+    const opHasMoves = opPieces.some(p => jmspDests(p, newPieces).length > 0)
+    if (opCount === 0 || !opHasMoves) {
       setGameOver(true); setWinner(current)
       playSound(current === 'X' ? (mode === 'computer' ? 'win' : 'win') : (mode === 'computer' ? 'lose' : 'win'))
     } else {
@@ -5525,6 +5527,335 @@ function CatMousePage() {
       <IntroText>{cmCaption}</IntroText>
       <SetDone celebrate={false} done={gameOver} />
       {rulesOpen && <Ch4RulesModal title="How to play Cops vs Robbers" onClose={() => setRulesOpen(false)}>{cmRules}</Ch4RulesModal>}
+    </>
+  )
+}
+
+
+// ===== 三子棋 (Sanzi) — Three-in-a-row on an octagonal board =====
+
+const SZ_N = 9        // 8 outer nodes + 1 center
+const SZ_CENTER = 8   // index of center
+const SZ_R = 38       // outer ring radius in SVG viewBox (0 0 100 100)
+const SZ_PR = 7       // piece radius
+
+// 0=top, going clockwise; 8=center
+const SZ_NODES: {x:number;y:number}[] = [
+  ...Array.from({length:8}, (_,i) => ({
+    x: 50 + SZ_R * Math.cos(Math.PI/2 - Math.PI*i/4),
+    y: 50 - SZ_R * Math.sin(Math.PI/2 - Math.PI*i/4),
+  })),
+  {x:50, y:50},
+]
+
+const SZ_EDGES: [number,number][] = [
+  [0,1],[1,2],[2,3],[3,4],[4,5],[5,6],[6,7],[7,0],  // outer ring
+  [0,8],[1,8],[2,8],[3,8],[4,8],[5,8],[6,8],[7,8],  // spokes
+]
+
+const SZ_ADJ: number[][] = Array.from({length:SZ_N}, (_,i) =>
+  SZ_EDGES.flatMap(([a,b]) => a===i ? [b] : b===i ? [a] : [])
+)
+
+// Win lines: only the 4 true geometric straight lines (diameters through center)
+const SZ_WIN_LINES: [number,number,number][] = [
+  [0,SZ_CENTER,4],[1,SZ_CENTER,5],[2,SZ_CENTER,6],[3,SZ_CENTER,7],
+]
+
+// X=blue at {7,0,1} (upper-left, top, upper-right); O=red at {3,4,5} (lower-right, bottom, lower-left)
+const SZ_INIT: ('X'|'O'|null)[] = [
+  'X', 'X', null, 'O', 'O', 'O', null, 'X', null,
+//  0    1    2    3    4    5    6    7    8(center)
+]
+
+function szCheck(board: ('X'|'O'|null)[]): 'X'|'O'|null {
+  for (const [a,b,c] of SZ_WIN_LINES) {
+    if (board[a] && board[a] === board[b] && board[b] === board[c]) return board[a]!
+  }
+  return null
+}
+
+function szAllMoves(board: ('X'|'O'|null)[], player: 'X'|'O'): [number,number][] {
+  const moves: [number,number][] = []
+  for (let from = 0; from < SZ_N; from++) {
+    if (board[from] !== player) continue
+    for (const to of SZ_ADJ[from]) {
+      if (board[to] === null) moves.push([from, to])
+    }
+  }
+  return moves
+}
+
+function szHeuristic(board: ('X'|'O'|null)[]): number {
+  let score = 0
+  for (const [a,b,c] of SZ_WIN_LINES) {
+    const oCount = [a,b,c].filter(i => board[i] === 'O').length
+    const xCount = [a,b,c].filter(i => board[i] === 'X').length
+    if (xCount === 0) score += oCount * oCount
+    if (oCount === 0) score -= xCount * xCount
+  }
+  // bonus for center control
+  if (board[SZ_CENTER] === 'O') score += 2
+  if (board[SZ_CENTER] === 'X') score -= 2
+  return score
+}
+
+function szMinimax(board: ('X'|'O'|null)[], isMax: boolean, depth: number, alpha: number, beta: number): number {
+  const w = szCheck(board)
+  if (w === 'O') return 500
+  if (w === 'X') return -500
+  if (depth === 0) return szHeuristic(board)
+  const player: 'X'|'O' = isMax ? 'O' : 'X'
+  const moves = szAllMoves(board, player)
+  if (!moves.length) return isMax ? -200 : 200
+  if (isMax) {
+    let best = -Infinity
+    for (const [from, to] of moves) {
+      const nb = [...board]; nb[from] = null; nb[to] = 'O'
+      best = Math.max(best, szMinimax(nb, false, depth - 1, alpha, beta))
+      alpha = Math.max(alpha, best)
+      if (beta <= alpha) break
+    }
+    return best
+  } else {
+    let best = Infinity
+    for (const [from, to] of moves) {
+      const nb = [...board]; nb[from] = null; nb[to] = 'X'
+      best = Math.min(best, szMinimax(nb, true, depth - 1, alpha, beta))
+      beta = Math.min(beta, best)
+      if (beta <= alpha) break
+    }
+    return best
+  }
+}
+
+function szAI(board: ('X'|'O'|null)[]): [number,number] | null {
+  const moves = szAllMoves(board, 'O')
+  if (!moves.length) return null
+  // Immediate win check
+  for (const [from, to] of moves) {
+    const nb = [...board]; nb[from] = null; nb[to] = 'O'
+    if (szCheck(nb) === 'O') return [from, to]
+  }
+  let bestMove = moves[0], bestVal = -Infinity
+  for (const [from, to] of moves) {
+    const nb = [...board]; nb[from] = null; nb[to] = 'O'
+    const val = szMinimax(nb, false, 4, -Infinity, Infinity)
+    if (val > bestVal) { bestVal = val; bestMove = [from, to] }
+  }
+  return bestMove
+}
+
+function SanziPage() {
+  const isLandscape = useIsLandscape()
+  const [mode, setMode]         = useState<TTTMode>('computer')
+  const [board, setBoard]       = useState<('X'|'O'|null)[]>(() => [...SZ_INIT])
+  const [current, setCurrent]   = useState<'X'|'O'>('X')
+  const [selIdx, setSelIdx]     = useState<number|null>(null)
+  const [dragPt, setDragPt]     = useState<{x:number;y:number}|null>(null)
+  const [gameOver, setGameOver] = useState(false)
+  const [winner, setWinner]     = useState<'X'|'O'|null>(null)
+  const [rulesOpen, setRulesOpen] = useState(false)
+  const svgRef    = useRef<SVGSVGElement>(null)
+  const selIdxRef = useRef<number|null>(null)
+
+  const P_COLOR: Record<'X'|'O', string> = { X: BLUE, O: RED }
+
+  function resetGame(m: TTTMode = mode) {
+    setMode(m); setBoard([...SZ_INIT]); setCurrent('X')
+    setSelIdx(null); selIdxRef.current = null
+    setDragPt(null); setGameOver(false); setWinner(null)
+  }
+
+  function doMove(from: number, to: number) {
+    if (gameOver) return
+    sfxUnlock()
+    const nb = [...board]; nb[from] = null; nb[to] = current
+    const w = szCheck(nb)
+    setBoard(nb)
+    if (w) {
+      setGameOver(true); setWinner(w)
+      playSound(w === 'X' ? 'win' : (mode === 'computer' ? 'lose' : 'win'))
+    } else {
+      playSound('turn')
+      setCurrent(p => p === 'X' ? 'O' : 'X')
+    }
+    selIdxRef.current = null; setSelIdx(null); setDragPt(null)
+  }
+
+  useEffect(() => {
+    if (mode !== 'computer' || current !== 'O' || gameOver) return
+    const t = setTimeout(() => {
+      const mv = szAI(board)
+      if (mv) doMove(mv[0], mv[1])
+    }, 500)
+    return () => clearTimeout(t)
+  }, [mode, current, gameOver, board]) // eslint-disable-line react-hooks/exhaustive-deps
+
+  function toSVGPt(e: React.PointerEvent) {
+    const svg = svgRef.current; if (!svg) return null
+    const p = svg.createSVGPoint(); p.x = e.clientX; p.y = e.clientY
+    return p.matrixTransform(svg.getScreenCTM()!.inverse())
+  }
+
+  function nearestEmpty(pt: {x:number;y:number}, thresh = 14): number | null {
+    let best: number|null = null, bestD = thresh
+    for (let i = 0; i < SZ_N; i++) {
+      if (board[i] !== null) continue
+      const d = Math.hypot(SZ_NODES[i].x - pt.x, SZ_NODES[i].y - pt.y)
+      if (d < bestD) { bestD = d; best = i }
+    }
+    return best
+  }
+
+  const isHumanTurn = !gameOver && (mode === 'two-player' || current === 'X')
+  const validMoves: number[] = selIdx !== null
+    ? SZ_ADJ[selIdx].filter(i => board[i] === null)
+    : []
+  const winLine = winner
+    ? (SZ_WIN_LINES.find(([a,b,c]) => board[a]===winner && board[b]===winner && board[c]===winner) ?? null)
+    : null
+
+  const svgBoard = (
+    <svg ref={svgRef} viewBox="0 0 100 100"
+      style={{width:'100%', aspectRatio:'1/1', maxHeight:'100%', touchAction:'none', overflow:'visible'}}
+      onPointerMove={e => {
+        if (selIdxRef.current === null) return
+        const pt = toSVGPt(e); if (pt) setDragPt({x:pt.x, y:pt.y})
+      }}
+      onPointerUp={e => {
+        if (selIdxRef.current === null) return
+        const pt = toSVGPt(e)
+        if (pt) {
+          const target = nearestEmpty(pt)
+          if (target !== null && SZ_ADJ[selIdxRef.current].includes(target)) {
+            doMove(selIdxRef.current, target); return
+          }
+        }
+        // Tap on piece (not a drag to target): keep selection, clear preview line
+        setDragPt(null)
+      }}
+      onPointerCancel={() => { selIdxRef.current = null; setSelIdx(null); setDragPt(null) }}
+    >
+      {/* Edges */}
+      {SZ_EDGES.map(([a,b], i) => (
+        <line key={i} x1={SZ_NODES[a].x} y1={SZ_NODES[a].y} x2={SZ_NODES[b].x} y2={SZ_NODES[b].y}
+          stroke="#ddd" strokeWidth={0.6} strokeLinecap="round" />
+      ))}
+
+      {/* Win-line highlight: straight line from first to last node */}
+      {winLine && (
+        <line x1={SZ_NODES[winLine[0]].x} y1={SZ_NODES[winLine[0]].y}
+              x2={SZ_NODES[winLine[2]].x} y2={SZ_NODES[winLine[2]].y}
+          stroke={P_COLOR[winner!]} strokeWidth={2.5} strokeLinecap="round" opacity={0.45} />
+      )}
+
+      {/* Empty nodes and valid-move indicators */}
+      {Array.from({length:SZ_N}, (_,i) => {
+        if (board[i] !== null) return null
+        const isTarget = validMoves.includes(i)
+        return (
+          <circle key={i} cx={SZ_NODES[i].x} cy={SZ_NODES[i].y} r={isTarget ? 4 : 2.5}
+            fill={isTarget ? P_COLOR[current] : '#ccc'}
+            opacity={isTarget ? 0.65 : 1}
+            style={{cursor: isTarget ? 'pointer' : 'default'}}
+            onClick={() => {
+              if (isTarget && isHumanTurn && selIdx !== null) doMove(selIdx, i)
+            }}
+          />
+        )
+      })}
+
+      {/* Drag preview line */}
+      {selIdx !== null && dragPt && (
+        <line x1={SZ_NODES[selIdx].x} y1={SZ_NODES[selIdx].y}
+              x2={dragPt.x} y2={dragPt.y}
+          stroke={P_COLOR[current]} strokeWidth={1} strokeLinecap="round" opacity={0.5} />
+      )}
+
+      {/* Pieces */}
+      {Array.from({length:SZ_N}, (_,i) => {
+        const player = board[i]; if (!player) return null
+        const isSel = i === selIdx
+        const pos = (isSel && dragPt) ? dragPt : SZ_NODES[i]
+        const canSel = isHumanTurn && player === current
+        const isWin = winLine?.includes(i) && player === winner
+        return (
+          <circle key={i} cx={pos.x} cy={pos.y} r={SZ_PR + (isSel ? 2 : 0)}
+            fill={P_COLOR[player]}
+            stroke={isSel ? '#fff' : isWin ? '#FFD700' : 'none'}
+            strokeWidth={isSel ? 2 : isWin ? 2.5 : 0}
+            style={{cursor: canSel ? 'grab' : 'default'}}
+            onPointerDown={e => {
+              if (!canSel) return
+              if (selIdxRef.current === i) {
+                // Tap already-selected piece: deselect
+                selIdxRef.current = null; setSelIdx(null); setDragPt(null); return
+              }
+              e.currentTarget.setPointerCapture(e.pointerId)
+              selIdxRef.current = i; setSelIdx(i)
+              const pt = toSVGPt(e); if (pt) setDragPt({x:pt.x, y:pt.y})
+            }}
+          />
+        )
+      })}
+    </svg>
+  )
+
+  const winnerLabel = winner
+    ? (mode==='computer'
+        ? (winner==='X' ? 'You win! 🎉' : 'I win! 😄')
+        : (winner==='X' ? 'Blue wins! 🎉' : 'Red wins! 🎉'))
+    : ''
+  const gameOverBanner = (gameOver && winner) ? (
+    <Ch4GameOverBanner winnerLabel={winnerLabel} winnerColor={P_COLOR[winner]} />
+  ) : null
+
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  const szCaption = useMemo(() => ch4Caption('Three Men\'s Morris', 'Move a piece one step — align 3 in a straight line to win!', () => setRulesOpen(true)), [])
+  const szRules = (
+    <>
+      <p style={{margin:'0 0 10px'}}>Each player starts with <b>3 pieces</b>. Blue goes first.</p>
+      <p style={{margin:'0 0 10px'}}>On your turn, drag or tap a piece to move it <b>one step</b> along any edge to an empty node.</p>
+      <p style={{margin:'0 0 10px'}}>Get your 3 pieces to form a <b>straight line</b> through the center (a diameter) to <b>win</b>!</p>
+    </>
+  )
+
+  if (isLandscape) return (
+    <>
+      <div style={{...ch4CanvasStyle, flex:1, display:'flex', flexDirection:'row', overflow:'hidden'}}>
+        <Ch4PlayAgainBtn show={gameOver} onClick={resetGame} />
+        <div style={{flexShrink:0, display:'flex', flexDirection:'column', alignItems:'flex-start', justifyContent:'space-between', padding:'24px 20px'}}>
+          {gameOver ? gameOverBanner : <TurnIndicator current={current} gameOver={gameOver} mode={mode} P_COLOR={P_COLOR} isLandscape={true} />}
+          <ModeSelector mode={mode} onReset={resetGame} />
+        </div>
+        <div style={{flex:1, minHeight:0, display:'flex', alignItems:'center', justifyContent:'center', padding:24, boxSizing:'border-box'}}>
+          {svgBoard}
+        </div>
+      </div>
+      <IntroText>{szCaption}</IntroText>
+      <SetDone celebrate={false} done={gameOver} />
+      {rulesOpen && <Ch4RulesModal title="How to play Three Men's Morris" onClose={() => setRulesOpen(false)}>{szRules}</Ch4RulesModal>}
+    </>
+  )
+
+  return (
+    <>
+      <div style={{...ch4CanvasStyle, flex:1, display:'flex', flexDirection:'column', overflow:'hidden'}}>
+        <Ch4PlayAgainBtn show={gameOver} onClick={resetGame} />
+        <div style={{display:'flex', alignItems:'center', justifyContent:'center', padding:'0 16px', height:60, flexShrink:0}}>
+          {gameOver ? gameOverBanner : <TurnIndicator current={current} gameOver={gameOver} mode={mode} P_COLOR={P_COLOR} isLandscape={false} />}
+        </div>
+        <div style={{flex:1, minHeight:0, display:'flex', alignItems:'center', justifyContent:'center', padding:20, boxSizing:'border-box'}}>
+          {svgBoard}
+        </div>
+        <div style={{display:'flex', alignItems:'center', justifyContent:'center', padding:'0 16px', height:48, flexShrink:0}}>
+          <ModeSelector mode={mode} onReset={resetGame} />
+        </div>
+      </div>
+      <IntroText>{szCaption}</IntroText>
+      <SetDone celebrate={false} done={gameOver} />
+      {rulesOpen && <Ch4RulesModal title="How to play Three Men's Morris" onClose={() => setRulesOpen(false)}>{szRules}</Ch4RulesModal>}
     </>
   )
 }
@@ -7230,9 +7561,17 @@ const GAMES: GameDef[] = [
   {
     id: 'jump-chess',
     title: 'Jump Chess',
-    emoji: '♟️',
+    emoji: '🐓',
     group: 'Board Games',
     pages: [JmspPage],
+    completion: { text: 'Amazing!', emojiIcon: '🎉' },
+  },
+  {
+    id: 'sanzi',
+    title: 'Three Men\'s Morris',
+    emoji: '🍡',
+    group: 'Board Games',
+    pages: [SanziPage],
     completion: { text: 'Amazing!', emojiIcon: '🎉' },
   },
   {
