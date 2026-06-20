@@ -7563,7 +7563,7 @@ function gtSubtreeBounds(
   return { minX, maxX, ids }
 }
 
-function gtRunTick(nodes: Map<string, GTNode>, dragId: string | null): boolean {
+function gtRunTick(nodes: Map<string, GTNode>): boolean {
   const vis = gtGetVis(nodes)
   const ns = [...vis].map(id => nodes.get(id)!)
   const es = gtGetEdges(nodes, vis)
@@ -7623,7 +7623,7 @@ function gtRunTick(nodes: Map<string, GTNode>, dragId: string | null): boolean {
 
   let anyMoving = false
   for (let i = 0; i < len; i++) {
-    const n = ns[i]; if (n.id === dragId) continue
+    const n = ns[i]
     n.vx = (n.vx + fx[i]) * GT_DAMP
     n.vy = (n.vy + fy[i]) * GT_DAMP
     n.x = Math.max(GT_R, Math.min(GT_VW - GT_R, n.x + n.vx))
@@ -7650,7 +7650,7 @@ function gtRunTick(nodes: Map<string, GTNode>, dragId: string | null): boolean {
     if (Math.abs(dx) > maxDx) { n.x = p.x + Math.sign(dx) * maxDx; n.vx = 0 }
   }
 
-  return anyMoving || dragId !== null
+  return anyMoving
 }
 
 const gtRules = (
@@ -7682,12 +7682,13 @@ const gtRules = (
     {
       svg: (
         <svg viewBox="0 0 80 80" style={{ width: '100%', height: '100%' }}>
-          <circle cx={40} cy={40} r={10} fill="#3b82f6" stroke="#fff" strokeWidth={2} />
-          <path d="M47 33 L62 22" stroke="#aaa" strokeWidth={1.5} strokeLinecap="round" strokeDasharray="3 2" />
-          <text x={40} y={58} textAnchor="middle" fontSize={8} fill="#888">drag to move</text>
+          <line x1={40} y1={55} x2={40} y2={30} stroke="#22c55e" strokeWidth={2} strokeOpacity={0.5} />
+          <circle cx={40} cy={55} r={8} fill="#eab308" stroke="#fff" strokeWidth={2} />
+          <circle cx={40} cy={26} r={7} fill="#22c55e" stroke="#fff" strokeWidth={2} />
+          <text x={40} y={55} textAnchor="middle" dominantBaseline="middle" fontSize={10} fill="#fff">0</text>
         </svg>
       ),
-      label: 'Drag any dot to rearrange the tree',
+      label: 'Tap again to cycle back to 0 — removed branches are remembered!',
     },
   ]} />
 )
@@ -7695,10 +7696,6 @@ const gtRules = (
 function GrowingTreePage() {
   const nodesRef = useRef<Map<string, GTNode>>(gtInitTree())
   const [, setTick] = useState(0)
-  const svgRef = useRef<SVGSVGElement>(null)
-  const dragIdRef = useRef<string | null>(null)
-  const movedRef = useRef(false)
-  const dragStartRef = useRef<{ x: number; y: number } | null>(null)
   const alphaRef = useRef(1.0)
   const rafRef = useRef<number>()
   const [rulesOpen, setRulesOpen] = useState(false)
@@ -7707,11 +7704,11 @@ function GrowingTreePage() {
     let alive = true
     const loop = () => {
       if (!alive) return
-      if (alphaRef.current > 0.005 || dragIdRef.current) {
-        const moving = gtRunTick(nodesRef.current, dragIdRef.current)
+      if (alphaRef.current > 0.005) {
+        const moving = gtRunTick(nodesRef.current)
         if (moving) {
           setTick(t => t + 1)
-          if (!dragIdRef.current) alphaRef.current *= 0.992
+          alphaRef.current *= 0.992
         } else {
           alphaRef.current = 0
         }
@@ -7721,40 +7718,6 @@ function GrowingTreePage() {
     rafRef.current = requestAnimationFrame(loop)
     return () => { alive = false; if (rafRef.current) cancelAnimationFrame(rafRef.current) }
   }, [])
-
-  function svgPt(e: React.PointerEvent) {
-    const svg = svgRef.current; if (!svg) return null
-    const p = svg.createSVGPoint(); p.x = e.clientX; p.y = e.clientY
-    return p.matrixTransform(svg.getScreenCTM()!.inverse())
-  }
-
-  function onNodeDown(e: React.PointerEvent, id: string) {
-    e.stopPropagation()
-    e.currentTarget.setPointerCapture(e.pointerId)
-    dragIdRef.current = id; movedRef.current = false
-    const pt = svgPt(e); if (pt) dragStartRef.current = { x: pt.x, y: pt.y }
-    alphaRef.current = Math.max(alphaRef.current, 0.3)
-  }
-
-  function onSVGMove(e: React.PointerEvent) {
-    if (!dragIdRef.current) return
-    const pt = svgPt(e); if (!pt) return
-    if (dragStartRef.current) {
-      if (Math.hypot(pt.x - dragStartRef.current.x, pt.y - dragStartRef.current.y) > 8) movedRef.current = true
-    }
-    if (movedRef.current) {
-      const n = nodesRef.current.get(dragIdRef.current); if (!n) return
-      n.x = Math.max(GT_R, Math.min(GT_VW - GT_R, pt.x))
-      n.y = Math.max(GT_R, Math.min(GT_VH - GT_R, pt.y))
-      n.vx = 0; n.vy = 0
-    }
-  }
-
-  function onSVGUp() {
-    if (dragIdRef.current && !movedRef.current) onTap(dragIdRef.current)
-    dragIdRef.current = null; movedRef.current = false; dragStartRef.current = null
-    alphaRef.current = Math.max(alphaRef.current, 0.5)
-  }
 
   function onTap(id: string) {
     const nodes = nodesRef.current, n = nodes.get(id)
@@ -7786,17 +7749,14 @@ function GrowingTreePage() {
   const edges = gtGetEdges(nodes, vis)
 
   // eslint-disable-next-line react-hooks/exhaustive-deps
-  const caption = useMemo(() => ch4Caption('Growing Tree', 'Tap a dot to grow or prune branches — drag to rearrange!', () => setRulesOpen(true)), [])
+  const caption = useMemo(() => ch4Caption('Growing Tree', 'Tap a dot to grow or prune branches!', () => setRulesOpen(true)), [])
 
   return (
     <>
       {rulesOpen && <Ch4RulesModal title="How to play Growing Tree" onClose={() => setRulesOpen(false)}>{gtRules}</Ch4RulesModal>}
       <div style={{ ...ch4CanvasStyle, flex: 1, display: 'flex', alignItems: 'center', justifyContent: 'center', overflow: 'hidden' }}>
-        <svg ref={svgRef} viewBox={`0 0 ${GT_VW} ${GT_VH}`}
+        <svg viewBox={`0 0 ${GT_VW} ${GT_VH}`}
           style={{ width: '100%', height: '100%', display: 'block', touchAction: 'none', userSelect: 'none' }}
-          onPointerMove={onSVGMove}
-          onPointerUp={onSVGUp}
-          onPointerCancel={() => { dragIdRef.current = null }}
         >
           {edges.map(([pid, cid]) => {
             const p = nodes.get(pid)!, c = nodes.get(cid)!
@@ -7816,8 +7776,8 @@ function GrowingTreePage() {
                 fill={GT_COLORS[n.level - 1]}
                 stroke="#fff" strokeWidth={2.5}
                 opacity={Math.min(1, nodeAge / 350)}
-                style={{ cursor: 'grab' }}
-                onPointerDown={e => onNodeDown(e, n.id)}
+                style={{ cursor: 'pointer' }}
+                onClick={() => onTap(n.id)}
               />
             )
           })}
