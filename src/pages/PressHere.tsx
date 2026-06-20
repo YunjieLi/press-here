@@ -1,4 +1,4 @@
-import React, { useState, useRef, useEffect, useLayoutEffect, createContext, useContext, useMemo } from 'react'
+import React, { useState, useRef, useEffect, useLayoutEffect, createContext, useContext, useMemo, useCallback } from 'react'
 
 const completionGifs = Object.values(import.meta.glob('../completion/*.gif', { eager: true, query: '?url', import: 'default' })) as string[]
 function randomCompletionGif() { return completionGifs[Math.floor(Math.random() * completionGifs.length)] }
@@ -7789,6 +7789,187 @@ function GrowingTreePage() {
   )
 }
 
+// ── Snake ──────────────────────────────────────────────────────────────────────
+
+const SN_COLS = 15, SN_ROWS = 18, SN_CELL = 22
+const SN_VW = SN_COLS * SN_CELL, SN_VH = SN_ROWS * SN_CELL
+const SN_R = SN_CELL * 0.38
+const SN_COLORS = ['#f97316', '#eab308', '#22c55e', '#3b82f6', '#6366f1', '#a855f7']
+type SnDir = 'U' | 'D' | 'L' | 'R'
+type SnPt = { x: number; y: number }
+const SN_OPP: Record<SnDir, SnDir> = { U: 'D', D: 'U', L: 'R', R: 'L' }
+
+function snFreeFood(snake: SnPt[]): SnPt {
+  const occ = new Set(snake.map(p => `${p.x},${p.y}`))
+  const free: SnPt[] = []
+  for (let x = 0; x < SN_COLS; x++)
+    for (let y = 0; y < SN_ROWS; y++)
+      if (!occ.has(`${x},${y}`)) free.push({ x, y })
+  return free[Math.floor(Math.random() * free.length)]
+}
+
+function snMkPage(tickMs: number, winLen: number): React.ComponentType {
+  function SnakePage() {
+    const active = useContext(PageActiveCtx)
+    const [, tick] = useState(0)
+    const snakeRef   = useRef<SnPt[]>([{ x: 7, y: 9 }, { x: 6, y: 9 }, { x: 5, y: 9 }])
+    const dirRef     = useRef<SnDir>('R')
+    const nextDirRef = useRef<SnDir>('R')
+    const foodRef    = useRef<SnPt>({ x: 11, y: 9 })
+    const stateRef   = useRef<'idle' | 'running' | 'dead' | 'won'>('idle')
+    const wonRef     = useRef(false)
+    const lastTRef   = useRef(0)
+    const rafRef     = useRef<number>()
+    const swipeRef   = useRef<{ x: number; y: number } | null>(null)
+
+    const reset = useCallback(() => {
+      snakeRef.current   = [{ x: 7, y: 9 }, { x: 6, y: 9 }, { x: 5, y: 9 }]
+      dirRef.current     = 'R'
+      nextDirRef.current = 'R'
+      foodRef.current    = snFreeFood(snakeRef.current)
+      stateRef.current   = 'idle'
+      lastTRef.current   = 0
+      tick(n => n + 1)
+    }, [])
+
+    // Arrow-key control
+    useEffect(() => {
+      const onKey = (e: KeyboardEvent) => {
+        const map: Record<string, SnDir> = { ArrowUp: 'U', ArrowDown: 'D', ArrowLeft: 'L', ArrowRight: 'R' }
+        const d = map[e.key]; if (!d) return
+        if (dirRef.current !== SN_OPP[d]) nextDirRef.current = d
+        if (stateRef.current === 'idle') { stateRef.current = 'running'; lastTRef.current = performance.now() }
+      }
+      window.addEventListener('keydown', onKey)
+      return () => window.removeEventListener('keydown', onKey)
+    }, [])
+
+    // Game loop
+    useEffect(() => {
+      if (!active) return
+      let alive = true
+      const loop = (ts: number) => {
+        if (!alive) return
+        if (stateRef.current === 'running' && ts - lastTRef.current >= tickMs) {
+          lastTRef.current = ts
+          dirRef.current = nextDirRef.current
+          const { x: hx, y: hy } = snakeRef.current[0]
+          const nx = hx + (dirRef.current === 'L' ? -1 : dirRef.current === 'R' ? 1 : 0)
+          const ny = hy + (dirRef.current === 'U' ? -1 : dirRef.current === 'D' ? 1 : 0)
+          // Wall or self collision → dead
+          if (nx < 0 || nx >= SN_COLS || ny < 0 || ny >= SN_ROWS ||
+              snakeRef.current.some(p => p.x === nx && p.y === ny)) {
+            stateRef.current = 'dead'; tick(n => n + 1)
+            rafRef.current = requestAnimationFrame(loop); return
+          }
+          const ate = nx === foodRef.current.x && ny === foodRef.current.y
+          const next = [{ x: nx, y: ny }, ...snakeRef.current]
+          if (!ate) next.pop()
+          snakeRef.current = next
+          if (ate) {
+            if (next.length >= winLen) {
+              stateRef.current = 'won'; wonRef.current = true
+            } else {
+              foodRef.current = snFreeFood(next)
+            }
+          }
+          tick(n => n + 1)
+        }
+        rafRef.current = requestAnimationFrame(loop)
+      }
+      rafRef.current = requestAnimationFrame(loop)
+      return () => { alive = false; if (rafRef.current) cancelAnimationFrame(rafRef.current) }
+    }, [active]) // eslint-disable-line react-hooks/exhaustive-deps
+
+    const onPointerDown = (e: React.PointerEvent) => { swipeRef.current = { x: e.clientX, y: e.clientY } }
+    const onPointerUp = (e: React.PointerEvent) => {
+      if (!swipeRef.current) return
+      const dx = e.clientX - swipeRef.current.x, dy = e.clientY - swipeRef.current.y
+      swipeRef.current = null
+      if (Math.abs(dx) < 8 && Math.abs(dy) < 8) {
+        if (stateRef.current === 'idle') { stateRef.current = 'running'; lastTRef.current = performance.now(); tick(n => n + 1) }
+        else if (stateRef.current === 'dead') reset()
+        return
+      }
+      const d: SnDir = Math.abs(dx) > Math.abs(dy) ? (dx > 0 ? 'R' : 'L') : (dy > 0 ? 'D' : 'U')
+      if (dirRef.current !== SN_OPP[d]) {
+        nextDirRef.current = d
+        if (stateRef.current === 'idle') { stateRef.current = 'running'; lastTRef.current = performance.now(); tick(n => n + 1) }
+      }
+    }
+
+    const snake = snakeRef.current, food = foodRef.current, state = stateRef.current
+    const cx = (p: SnPt) => p.x * SN_CELL + SN_CELL / 2
+    const cy = (p: SnPt) => p.y * SN_CELL + SN_CELL / 2
+
+    return (
+      <>
+        <div style={{ ...ch4CanvasStyle, flex: 1, display: 'flex', alignItems: 'center', justifyContent: 'center', overflow: 'hidden' }}>
+          <svg viewBox={`0 0 ${SN_VW} ${SN_VH}`}
+            style={{ width: '100%', height: '100%', display: 'block', touchAction: 'none', userSelect: 'none' }}
+            onPointerDown={onPointerDown} onPointerUp={onPointerUp}
+          >
+            {/* Subtle dot grid */}
+            {Array.from({ length: SN_COLS * SN_ROWS }, (_, i) => (
+              <circle key={i} r={1.2}
+                cx={(i % SN_COLS) * SN_CELL + SN_CELL / 2}
+                cy={Math.floor(i / SN_COLS) * SN_CELL + SN_CELL / 2}
+                fill="#ede8df" />
+            ))}
+
+            {/* Food */}
+            <circle cx={cx(food)} cy={cy(food)} r={SN_R + 4} fill="#eab308" opacity={0.18} />
+            <circle cx={cx(food)} cy={cy(food)} r={SN_R} fill="#eab308" stroke="#fff" strokeWidth={2} />
+
+            {/* Snake — draw connections first, then dots on top */}
+            {snake.slice(1).map((p, i) => {
+              const prev = snake[i]
+              return <line key={`l${i}`}
+                x1={cx(prev)} y1={cy(prev)} x2={cx(p)} y2={cy(p)}
+                stroke={i === 0 ? RED : SN_COLORS[Math.min(Math.floor(i / 2), SN_COLORS.length - 1)]}
+                strokeWidth={SN_R * 1.7} strokeLinecap="round" />
+            })}
+            {snake.map((p, i) => (
+              <circle key={`d${i}`} cx={cx(p)} cy={cy(p)} r={SN_R}
+                fill={i === 0 ? RED : SN_COLORS[Math.min(Math.floor(i / 2), SN_COLORS.length - 1)]}
+                stroke="#fff" strokeWidth={2} />
+            ))}
+
+            {/* Score */}
+            {state !== 'idle' && state !== 'dead' && (
+              <text x={SN_VW - 8} y={20} textAnchor="end" fontSize={13} fontWeight={800}
+                fill="#ccc" fontFamily="inherit">{snake.length} / {winLen}</text>
+            )}
+
+            {/* Overlays */}
+            {state === 'idle' && (
+              <text x={SN_VW / 2} y={SN_VH / 2} textAnchor="middle" dominantBaseline="middle"
+                fontSize={18} fontWeight={800} fill={RED} fontFamily="inherit">Tap or swipe to start!</text>
+            )}
+            {state === 'dead' && <>
+              <text x={SN_VW / 2} y={SN_VH / 2 - 16} textAnchor="middle" dominantBaseline="middle"
+                fontSize={22} fontWeight={900} fill={RED} fontFamily="inherit">Oops! 😵</text>
+              <text x={SN_VW / 2} y={SN_VH / 2 + 16} textAnchor="middle" dominantBaseline="middle"
+                fontSize={13} fill={RED} opacity={0.7} fontFamily="inherit">Tap to try again</text>
+            </>}
+            {state === 'won' && (
+              <text x={SN_VW / 2} y={SN_VH / 2} textAnchor="middle" dominantBaseline="middle"
+                fontSize={22} fontWeight={900} fill={RED} fontFamily="inherit">You did it! 🎉</text>
+            )}
+          </svg>
+        </div>
+        <IntroText>Swipe to steer — eat the dots to grow!</IntroText>
+        <SetDone done={wonRef.current} />
+      </>
+    )
+  }
+  return SnakePage
+}
+
+const SnakePage1 = snMkPage(260, 8)
+const SnakePage2 = snMkPage(180, 14)
+const SnakePage3 = snMkPage(120, 22)
+
 // ── Game registry ─────────────────────────────────────────────────────────────
 
 type CompletionCfg = {
@@ -7838,6 +8019,14 @@ const GAMES: GameDef[] = [
     group: 'Drawing',
     pages: [GrowingTreePage],
     completion: { text: 'Keep exploring!', emojiIcon: '🌿' },
+  },
+  {
+    id: 'snake',
+    title: 'Snake',
+    emoji: '🐍',
+    group: 'Action',
+    pages: [SnakePage1, SnakePage2, SnakePage3],
+    completion: { text: 'Hissss! 🐍' },
   },
   {
     id: 'red-dot-jump',
