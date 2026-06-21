@@ -7774,7 +7774,6 @@ function GrowingTreePage() {
             return (
               <circle key={n.id} cx={n.x} cy={n.y} r={GT_R}
                 fill={GT_COLORS[n.level - 1]}
-                stroke="#fff" strokeWidth={2.5}
                 opacity={Math.min(1, nodeAge / 350)}
                 style={{ cursor: 'pointer' }}
                 onClick={() => onTap(n.id)}
@@ -7887,7 +7886,21 @@ function snMkPage(tickMs: number): React.ComponentType {
       return () => { alive = false; if (rafRef.current) cancelAnimationFrame(rafRef.current) }
     }, [active]) // eslint-disable-line react-hooks/exhaustive-deps
 
-    const onPointerDown = (e: React.PointerEvent) => { swipeRef.current = { x: e.clientX, y: e.clientY } }
+    const onPointerDown = (e: React.PointerEvent) => {
+      e.currentTarget.setPointerCapture(e.pointerId)
+      swipeRef.current = { x: e.clientX, y: e.clientY }
+    }
+    const onPointerMove = (e: React.PointerEvent) => {
+      if (!swipeRef.current) return
+      const dx = e.clientX - swipeRef.current.x, dy = e.clientY - swipeRef.current.y
+      if (Math.abs(dx) < 22 && Math.abs(dy) < 22) return
+      const d: SnDir = Math.abs(dx) > Math.abs(dy) ? (dx > 0 ? 'R' : 'L') : (dy > 0 ? 'D' : 'U')
+      if (dirRef.current !== SN_OPP[d]) {
+        nextDirRef.current = d
+        if (stateRef.current === 'idle') { stateRef.current = 'running'; lastTRef.current = performance.now(); tick(n => n + 1) }
+      }
+      swipeRef.current = { x: e.clientX, y: e.clientY }
+    }
     const onPointerUp = (e: React.PointerEvent) => {
       if (!swipeRef.current) return
       const dx = e.clientX - swipeRef.current.x, dy = e.clientY - swipeRef.current.y
@@ -7895,12 +7908,6 @@ function snMkPage(tickMs: number): React.ComponentType {
       if (Math.abs(dx) < 8 && Math.abs(dy) < 8) {
         if (stateRef.current === 'idle') { stateRef.current = 'running'; lastTRef.current = performance.now(); tick(n => n + 1) }
         else if (stateRef.current === 'dead') reset()
-        return
-      }
-      const d: SnDir = Math.abs(dx) > Math.abs(dy) ? (dx > 0 ? 'R' : 'L') : (dy > 0 ? 'D' : 'U')
-      if (dirRef.current !== SN_OPP[d]) {
-        nextDirRef.current = d
-        if (stateRef.current === 'idle') { stateRef.current = 'running'; lastTRef.current = performance.now(); tick(n => n + 1) }
       }
     }
 
@@ -7915,7 +7922,7 @@ function snMkPage(tickMs: number): React.ComponentType {
         <div style={{ ...ch4CanvasStyle, flex: 1, display: 'flex', alignItems: 'center', justifyContent: 'center', overflow: 'hidden' }}>
           <svg viewBox={`0 0 ${SN_VW} ${SN_VH}`}
             style={{ width: '100%', height: '100%', display: 'block', touchAction: 'none', userSelect: 'none' }}
-            onPointerDown={onPointerDown} onPointerUp={onPointerUp}
+            onPointerDown={onPointerDown} onPointerMove={onPointerMove} onPointerUp={onPointerUp}
           >
             {/* Subtle dot grid */}
             {Array.from({ length: SN_COLS * SN_ROWS }, (_, i) => (
