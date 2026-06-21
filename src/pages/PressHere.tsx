@@ -8036,7 +8036,7 @@ const GAMES: GameDef[] = [
   },
   {
     id: 'red-dot-jump',
-    title: 'Dinosaur Jump',
+    title: 'Dino Jump',
     emoji: '🦖',
     group: 'Action',
     pages: [Ch3Page1, Ch3Page1L2, Ch3Page1L3],
