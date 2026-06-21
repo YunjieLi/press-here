@@ -57,10 +57,12 @@ const SCATTERED: { x: number; y: number }[] = [
 const PILE_Y = [12, 45, 72, 52, 85, 22, 35, 65, 80, 28, 10, 50, 30, 90, 68]
 const PILED_RIGHT: { x: number; y: number }[] = PILE_Y.map(y => ({ x: 100 - RX, y }))
 
-const CaptionCtx    = createContext<(n: React.ReactNode) => void>(() => {})
-const SetSpeakCtx   = createContext<(t: string) => void>(() => {})
-const DoneCtx       = createContext<(done: boolean) => void>(() => {})
-const PageActiveCtx = createContext<boolean>(true)
+const CaptionCtx       = createContext<(n: React.ReactNode) => void>(() => {})
+const SetSpeakCtx      = createContext<(t: string) => void>(() => {})
+const DoneCtx          = createContext<(done: boolean) => void>(() => {})
+const PageActiveCtx    = createContext<boolean>(true)
+const GameDifficultyCtx = createContext<'easy' | 'hard'>('hard')
+const GameModeCtx       = createContext<'computer' | 'two-player'>('computer')
 
 function extractText(node: React.ReactNode): string {
   if (node == null || typeof node === 'boolean') return ''
@@ -2171,6 +2173,14 @@ function ReplayIconBtn({ onClick, style }: { onClick: () => void; style?: React.
   )
 }
 
+function mkDiffGame(easy: React.ComponentType, hard: React.ComponentType): React.ComponentType {
+  return function DifficultyGame() {
+    const diff = useContext(GameDifficultyCtx)
+    const Game = diff === 'easy' ? easy : hard
+    return <Game />
+  }
+}
+
 /** Squared distance from point (px,py) to segment (ax,ay)→(bx,by). */
 function ptSegSq(px: number, py: number, ax: number, ay: number, bx: number, by: number): number {
   const dx = bx - ax, dy = by - ay
@@ -2451,7 +2461,7 @@ function Ch3Page1({ winTarget = CH3_WIN, variant = 'normal' }: { winTarget?: num
             fontSize: 14, fontWeight: 800, color: '#bbb',
             fontFamily: 'inherit', letterSpacing: 0.5,
           }}>
-            {jumpedRef.current} / {winTarget}
+            {winTarget === Infinity ? jumpedRef.current : `${jumpedRef.current} / ${winTarget}`}
           </div>
         )}
 
@@ -2852,7 +2862,7 @@ function Ch3Page2({ winTarget = C3P2_WIN, variant = 'normal' }: { winTarget?: nu
             position: 'absolute', top: 18, right: 18,
             fontSize: 14, fontWeight: 800, color: '#bbb', fontFamily: 'inherit',
           }}>
-            {cleared} / {winTarget}
+            {winTarget === Infinity ? cleared : `${cleared} / ${winTarget}`}
           </div>
         )}
 
@@ -3103,16 +3113,21 @@ function Ch3Page3({ winTarget = C3P3_WIN_DIST, variant = 'normal' }: { winTarget
         ctx.fillStyle = BLUE
         ctx.fill()
 
-        // Countdown timer (top-right): "MM:SS" counting down to 00:00
+        // Timer top-right: countdown when finite, elapsed when infinite
         if (runRef.current && !wonRef.current && !deadRef.current) {
-          const remainSec = Math.max(0, Math.ceil((winTarget - framesRef.current) / 60))
-          const mm = Math.floor(remainSec / 60)
-          const ss = remainSec % 60
           ctx.fillStyle = '#bbbbbb'
           ctx.font = '700 13px system-ui, sans-serif'
           ctx.textAlign = 'right'
           ctx.textBaseline = 'top'
-          ctx.fillText(`${String(mm).padStart(2, '0')}:${String(ss).padStart(2, '0')}`, cw - 18, 16)
+          if (winTarget === Infinity) {
+            const elapsedSec = Math.floor(framesRef.current / 60)
+            const mm = Math.floor(elapsedSec / 60), ss = elapsedSec % 60
+            ctx.fillText(`${String(mm).padStart(2, '0')}:${String(ss).padStart(2, '0')}`, cw - 18, 16)
+          } else {
+            const remainSec = Math.max(0, Math.ceil((winTarget - framesRef.current) / 60))
+            const mm = Math.floor(remainSec / 60), ss = remainSec % 60
+            ctx.fillText(`${String(mm).padStart(2, '0')}:${String(ss).padStart(2, '0')}`, cw - 18, 16)
+          }
         }
       }
 
@@ -3698,7 +3713,8 @@ function Ch4PlayAgainBtn({ show, onClick, bottomLeft }: { show: boolean; onClick
 }
 
 function TicTacToePage() {
-  const [mode, setMode]         = useState<TTTMode>('computer')
+  const aiDiff = useContext(GameDifficultyCtx)
+  const mode   = useContext(GameModeCtx)
   const [board, setBoard]       = useState<TTTCell[]>(Array(9).fill(null))
   const [current, setCurrent]   = useState<'X' | 'O'>('X')   // X = Blue, O = Red
   const [status, setStatus]     = useState<TTTStatus>('playing')
@@ -3716,14 +3732,13 @@ function TicTacToePage() {
   // Cancel pending AI timer on unmount
   useEffect(() => () => { if (aiTimerRef.current) clearTimeout(aiTimerRef.current) }, [])
 
-  function resetGame(nextMode = mode) {
+  function resetGame() {
     if (aiTimerRef.current) { clearTimeout(aiTimerRef.current); aiTimerRef.current = null }
     setBoard(Array(9).fill(null))
     setCurrent('X')
     setStatus('playing')
     setWinLine(null)
     aiPendingRef.current = false
-    setMode(nextMode)
   }
 
   function handleCellClick(i: number) {
@@ -3752,7 +3767,10 @@ function TicTacToePage() {
       aiPendingRef.current = true
       aiTimerRef.current = setTimeout(() => {
         aiTimerRef.current = null
-        const ai = tttAIMove(nb)
+        const emptyForAI = nb.flatMap((c: TTTCell, i: number) => c === null ? [i] : [])
+        const ai = aiDiff === 'easy'
+          ? emptyForAI[Math.floor(Math.random() * emptyForAI.length)]
+          : tttAIMove(nb)
         const ab = [...nb] as TTTCell[]
         ab[ai] = 'O'
         const ast = tttWinner(ab)
@@ -3874,12 +3892,12 @@ function TicTacToePage() {
       <>
         <div style={{ ...ch4CanvasStyle, flex: 1, display: 'flex', flexDirection: 'row', overflow: 'hidden' }}>
           <Ch4PlayAgainBtn show={gameOver} onClick={resetGame} />
-          {/* Left column: turn + mode / banner */}
-          <div style={{ flexShrink: 0, display: 'flex', flexDirection: 'column', alignItems: 'flex-start', justifyContent: 'space-between', padding: '24px 20px' }}>
-            {gameOver ? gameOverBanner : <TurnIndicator current={current} gameOver={gameOver} mode={mode} P_COLOR={P_COLOR} isLandscape={true} />}
-            <ModeSelector mode={mode} onReset={resetGame} />
+          {/* Left column: fixed width so board never shifts */}
+          <div style={{ width: 160, flexShrink: 0, display: 'flex', flexDirection: 'column', alignItems: 'flex-start', justifyContent: 'space-between', padding: '24px 20px' }}>
+            <TurnIndicator current={current} gameOver={gameOver} mode={mode} P_COLOR={P_COLOR} isLandscape={true} />
+            {gameOver && gameOverBanner}
           </div>
-          {/* Board — no overlay */}
+          {/* Board — fills remaining */}
           <div style={{ flex: 1, minHeight: 0, display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 24, boxSizing: 'border-box' }}>
             {boardGrid}
           </div>
@@ -3893,19 +3911,19 @@ function TicTacToePage() {
 
   return (
     <>
-      <div style={{ ...ch4CanvasStyle, flex: 1, display: 'flex', flexDirection: 'column', overflow: 'hidden', justifyContent: 'center' }}>
-          <Ch4PlayAgainBtn show={gameOver} onClick={resetGame} />
-        {/* Top: banner when over, turn indicator otherwise */}
-        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', padding: '0 16px', height: 60, flexShrink: 0 }}>
-          {gameOver ? gameOverBanner : <TurnIndicator current={current} gameOver={gameOver} mode={mode} P_COLOR={P_COLOR} isLandscape={false} />}
+      <div style={{ ...ch4CanvasStyle, flex: 1, display: 'flex', flexDirection: 'column', overflow: 'hidden' }}>
+        <Ch4PlayAgainBtn show={gameOver} onClick={resetGame} />
+        {/* Top slot: fixed 60px */}
+        <div style={{ height: 60, flexShrink: 0, display: 'flex', alignItems: 'center', justifyContent: 'center', padding: '0 16px' }}>
+          <TurnIndicator current={current} gameOver={gameOver} mode={mode} P_COLOR={P_COLOR} isLandscape={false} />
         </div>
-        {/* Middle: board — no overlay */}
-        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 20, boxSizing: 'border-box' }}>
+        {/* Middle: board fills remaining — never shifts */}
+        <div style={{ flex: 1, minHeight: 0, display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 20, boxSizing: 'border-box' }}>
           {boardGrid}
         </div>
-        {/* Bottom: always mode selector */}
-        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', padding: '0 16px', height: 48, flexShrink: 0 }}>
-          <ModeSelector mode={mode} onReset={resetGame} />
+        {/* Bottom slot: always 48px, content only when game over */}
+        <div style={{ height: 48, flexShrink: 0, display: 'flex', alignItems: 'center', justifyContent: 'center', padding: '0 16px' }}>
+          {gameOver && gameOverBanner}
         </div>
       </div>
       <IntroText>{tttCaption}</IntroText>
@@ -4006,7 +4024,8 @@ function dbAI(h: DBOwner[], v: DBOwner[], boxes: DBOwner[]): { isH: boolean; idx
 }
 
 function DotsAndBoxesPage() {
-  const [mode, setMode]       = useState<TTTMode>('computer')
+  const aiDiff = useContext(GameDifficultyCtx)
+  const mode   = useContext(GameModeCtx)
   const [hLines, setHLines]   = useState<DBOwner[]>(dbMkH)
   const [vLines, setVLines]   = useState<DBOwner[]>(dbMkV)
   const [bBoxes, setBBoxes]   = useState<DBOwner[]>(dbMkB)
@@ -4083,19 +4102,18 @@ function DotsAndBoxesPage() {
     return candidates.some(l => (l.isH ? hLines[l.idx] : vLines[l.idx]) === null)
   }
 
-  function resetGame(newMode?: TTTMode, newNumPlayers?: 2 | 3) {
+  function resetGame(newNumPlayers?: 2 | 3) {
     aiCancelRef.current = true   // stop any in-flight AI chain
     aiPendingRef.current = false
     const np = newNumPlayers ?? numPlayers
-    const nm = newMode ?? (np === 3 ? 'two-player' : mode)
-    setMode(nm); setNumPlayers(np)
+    setNumPlayers(np)
     setHLines(dbMkH()); setVLines(dbMkV()); setBBoxes(dbMkB())
     setCurrent('X'); setHasWon(false)
     selDotRef.current = null
     setSelDot(null); setDragPt(null)
   }
 
-  function changePlayerCount(n: 2 | 3) { resetGame(n === 3 ? 'two-player' : mode, n) }
+  function changePlayerCount(n: 2 | 3) { resetGame(n) }
 
   // Commit a line as the current player, then chain AI if needed
   function commitLine(isH: boolean, idx: number) {
@@ -4128,7 +4146,13 @@ function DotsAndBoxesPage() {
       aiCancelRef.current = false   // fresh chain
       function runAI(ch: DBOwner[], cv: DBOwner[], cb: DBOwner[]) {
         if (aiCancelRef.current) { aiPendingRef.current = false; return }
-        const move = dbAI(ch, cv, cb)
+        const hLen = (DB_N + 1) * DB_N, vLen = DB_N * (DB_N + 1)
+        const hFree = Array.from({ length: hLen }, (_, i) => i).filter(i => ch[i] === null)
+        const vFree = Array.from({ length: vLen }, (_, i) => i).filter(i => cv[i] === null)
+        const allFree = [...hFree.map(i => ({ isH: true, idx: i })), ...vFree.map(i => ({ isH: false, idx: i }))]
+        const move = aiDiff === 'easy'
+          ? (allFree[Math.floor(Math.random() * allFree.length)] ?? null)
+          : dbAI(ch, cv, cb)
         if (!move) { aiPendingRef.current = false; setCurrent('X'); return }
         const r2   = dbApply(ch, cv, cb, move.isH, move.idx, 'O')
         const np: Player = r2.extra ? 'O' : 'X'
@@ -4289,15 +4313,13 @@ function DotsAndBoxesPage() {
       <>
         <div style={{ ...ch4CanvasStyle, flex: 1, display: 'flex', flexDirection: 'row', overflow: 'hidden' }}>
           <Ch4PlayAgainBtn show={gameOver} onClick={resetGame} />
-          {/* Left column: turn + score + add/remove player */}
-          <div style={{ flexShrink: 0, display: 'flex', flexDirection: 'column', alignItems: 'flex-start', justifyContent: 'space-between', padding: '24px 20px' }}>
-            {gameOver ? gameOverBanner : <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
+          <div style={{ width: 160, flexShrink: 0, display: 'flex', flexDirection: 'column', alignItems: 'flex-start', justifyContent: 'space-between', padding: '24px 20px' }}>
+            <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
               <TurnIndicator current={current} gameOver={gameOver} mode={mode} P_COLOR={P_COLOR} isLandscape={true} scores={dbScores} players={players} />
               <PlayerCountControl count={numPlayers} onChange={changePlayerCount} isLandscape={true} />
-            </div>}
-            <ModeSelector mode={mode} onReset={resetGame} />
+            </div>
+            {gameOver && gameOverBanner}
           </div>
-          {/* Board — no overlay */}
           <div style={{ flex: 1, minHeight: 0, display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 16, boxSizing: 'border-box' }}>
             {boardSvg}
           </div>
@@ -4311,22 +4333,17 @@ function DotsAndBoxesPage() {
 
   return (
     <>
-      <div style={{ ...ch4CanvasStyle, flex: 1, display: 'flex', flexDirection: 'column', overflow: 'hidden', justifyContent: 'center' }}>
-          <Ch4PlayAgainBtn show={gameOver} onClick={resetGame} />
-        {/* Top: banner when over, turn indicator + score otherwise */}
-        <div style={{ display: 'flex', flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 20, padding: '0 16px', height: 60, flexShrink: 0 }}>
-          {gameOver ? gameOverBanner : <>
-            <TurnIndicator current={current} gameOver={gameOver} mode={mode} P_COLOR={P_COLOR} isLandscape={false} scores={dbScores} players={players} />
-            <PlayerCountControl count={numPlayers} onChange={changePlayerCount} isLandscape={false} />
-          </>}
+      <div style={{ ...ch4CanvasStyle, flex: 1, display: 'flex', flexDirection: 'column', overflow: 'hidden' }}>
+        <Ch4PlayAgainBtn show={gameOver} onClick={resetGame} />
+        <div style={{ height: 60, flexShrink: 0, display: 'flex', flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 20, padding: '0 16px' }}>
+          <TurnIndicator current={current} gameOver={gameOver} mode={mode} P_COLOR={P_COLOR} isLandscape={false} scores={dbScores} players={players} />
+          <PlayerCountControl count={numPlayers} onChange={changePlayerCount} isLandscape={false} />
         </div>
-        {/* Middle: board — no overlay */}
-        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 16, boxSizing: 'border-box' }}>
+        <div style={{ flex: 1, minHeight: 0, display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 16, boxSizing: 'border-box' }}>
           {boardSvg}
         </div>
-        {/* Bottom: always mode selector */}
-        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', padding: '0 16px', height: 48, flexShrink: 0 }}>
-          <ModeSelector mode={mode} onReset={resetGame} />
+        <div style={{ height: 48, flexShrink: 0, display: 'flex', alignItems: 'center', justifyContent: 'center', padding: '0 16px' }}>
+          {gameOver && gameOverBanner}
         </div>
       </div>
       <IntroText>{dbCaption}</IntroText>
@@ -4343,6 +4360,14 @@ function Ch3Page3L2() { return <Ch3Page3 winTarget={C3P3_WIN_DIST2} /> }
 function Ch3Page1L3() { return <Ch3Page1 winTarget={CH3_WIN3} variant="hard" /> }
 function Ch3Page2L3() { return <Ch3Page2 winTarget={C3P2_WIN3} variant="hard" /> }
 function Ch3Page3L3() { return <Ch3Page3 winTarget={C3P3_WIN_DIST3} variant="hard" /> }
+
+// Easy/Hard difficulty variants (infinite — no win target)
+function DinoEasy()   { return <Ch3Page1 winTarget={Infinity} /> }
+function DinoHard()   { return <Ch3Page1 winTarget={Infinity} variant="hard" /> }
+function CloudEasy()  { return <Ch3Page2 winTarget={Infinity} /> }
+function CloudHard()  { return <Ch3Page2 winTarget={Infinity} variant="hard" /> }
+function FlappyEasy() { return <Ch3Page3 winTarget={Infinity} /> }
+function FlappyHard() { return <Ch3Page3 winTarget={Infinity} variant="hard" /> }
 
 
 const DT_VB   = 300   // SVG viewBox size
@@ -4477,8 +4502,9 @@ function dtEdgeCrossesDrawn(
 }
 
 function DotTrianglesPage() {
+  const aiDiff = useContext(GameDifficultyCtx)
+  const mode   = useContext(GameModeCtx)
   const isLandscape = useIsLandscape()
-  const [mode,    setMode]    = useState<TTTMode>('computer')
   const [numPlayers, setNumPlayers] = useState<2 | 3>(2)
   const [gameId,  setGameId]  = useState(0)
   const [usedEdges, setUsedEdges] = useState<Set<string>>(new Set())
@@ -4524,9 +4550,8 @@ function DotTrianglesPage() {
   const P_COLOR: Record<Player, string> = { X: BLUE, O: RED, Y: YELLOW }
   const players = (numPlayers === 3 ? ['X', 'O', 'Y'] : ['X', 'O']) as Player[]
 
-  function resetGame(m: TTTMode = mode, np: 2 | 3 = numPlayers) {
-    const nm = np === 3 ? 'two-player' : m
-    setMode(nm); setNumPlayers(np); setGameId(id => id+1)
+  function resetGame(np: 2 | 3 = numPlayers) {
+    setNumPlayers(np); setGameId(id => id+1)
     setUsedEdges(new Set()); setEdgeOwner({}); setClaimed([])
     setScoreX(0); setScoreO(0); setScoreY(0); setCurrent('X')
     setGameOver(false)
@@ -4534,7 +4559,7 @@ function DotTrianglesPage() {
     setSelDot(null); setDragPt(null)
   }
 
-  function changePlayerCount(n: 2 | 3) { resetGame(n === 3 ? 'two-player' : mode, n) }
+  function changePlayerCount(n: 2 | 3) { resetGame(n) }
 
   function commitEdge(a: number, b: number, who: Player = current) {
     const key = dtEdgeKey(a,b)
@@ -4589,28 +4614,33 @@ function DotTrianglesPage() {
     }
   }
 
-  // Computer move — prefers edges that complete the most triangles
+  // Computer move — easy: random edge; hard: prefers edges that complete the most triangles
   useEffect(() => {
     if (mode !== 'computer' || numPlayers !== 2 || current !== 'O' || gameOver) return
     if (availEdges.length === 0) return
     const t = setTimeout(() => {
-      let best = availEdges[0], bestN = -1
-      for (const [a,b] of availEdges) {
-        let n = 0
-        for (let c=0; c<dots.length; c++) {
-          if (c===a||c===b) continue
-          if (usedEdges.has(dtEdgeKey(a,c)) && usedEdges.has(dtEdgeKey(b,c))) {
-            const tri = [a,b,c].sort((x,y)=>x-y) as [number,number,number]
-            if (!claimed.some(cl => dtTrianglesOverlap(tri, cl.tri, dots)) &&
-                !dtTriHasInteriorDot(tri, dots)) n++
+      let best: [number, number]
+      if (aiDiff === 'easy') {
+        best = availEdges[Math.floor(Math.random() * availEdges.length)]
+      } else {
+        best = availEdges[0]; let bestN = -1
+        for (const [a,b] of availEdges) {
+          let n = 0
+          for (let c=0; c<dots.length; c++) {
+            if (c===a||c===b) continue
+            if (usedEdges.has(dtEdgeKey(a,c)) && usedEdges.has(dtEdgeKey(b,c))) {
+              const tri = [a,b,c].sort((x,y)=>x-y) as [number,number,number]
+              if (!claimed.some(cl => dtTrianglesOverlap(tri, cl.tri, dots)) &&
+                  !dtTriHasInteriorDot(tri, dots)) n++
+            }
           }
+          if (n > bestN) { bestN = n; best = [a,b] }
         }
-        if (n > bestN) { bestN = n; best = [a,b] }
       }
       commitEdge(best[0], best[1], 'O')
     }, 550)
     return () => clearTimeout(t)
-  }, [mode, current, gameOver, usedEdges, availEdges])  // eslint-disable-line react-hooks/exhaustive-deps
+  }, [mode, current, gameOver, usedEdges, availEdges, aiDiff])  // eslint-disable-line react-hooks/exhaustive-deps
 
   function toSVGPt(e: React.PointerEvent) {
     const svg = svgRef.current; if (!svg) return null
@@ -4750,12 +4780,12 @@ function DotTrianglesPage() {
       <>
         <div style={{ ...ch4CanvasStyle, flex:1, display:'flex', flexDirection:'row', overflow:'hidden' }}>
           <Ch4PlayAgainBtn show={gameOver} onClick={resetGame} />
-          <div style={{ flexShrink:0, display:'flex', flexDirection:'column', alignItems:'flex-start', justifyContent:'space-between', padding:'24px 20px' }}>
-            {gameOver ? gameOverBanner : <div style={{ display:'flex', flexDirection:'column', gap:10 }}>
+          <div style={{ width:160, flexShrink:0, display:'flex', flexDirection:'column', alignItems:'flex-start', justifyContent:'space-between', padding:'24px 20px' }}>
+            <div style={{ display:'flex', flexDirection:'column', gap:10 }}>
               <TurnIndicator current={current} gameOver={gameOver} mode={mode} P_COLOR={P_COLOR} isLandscape={true} scores={dtScores} players={players} />
               <PlayerCountControl count={numPlayers} onChange={changePlayerCount} isLandscape={true} />
-            </div>}
-            <ModeSelector mode={mode} onReset={resetGame} />
+            </div>
+            {gameOver && gameOverBanner}
           </div>
           <div style={{ flex:1, minHeight:0, display:'flex', alignItems:'center', justifyContent:'center', padding:24, boxSizing:'border-box' }}>
             {svgBoard}
@@ -4770,19 +4800,17 @@ function DotTrianglesPage() {
 
   return (
     <>
-      <div style={{ ...ch4CanvasStyle, flex:1, display:'flex', flexDirection:'column', overflow:'hidden', justifyContent:'center' }}>
-          <Ch4PlayAgainBtn show={gameOver} onClick={resetGame} />
-        <div style={{ display:'flex', flexDirection:'row', alignItems:'center', justifyContent:'center', gap:20, padding:'0 16px', height:60, flexShrink:0 }}>
-          {gameOver ? gameOverBanner : <>
-            <TurnIndicator current={current} gameOver={gameOver} mode={mode} P_COLOR={P_COLOR} isLandscape={false} scores={dtScores} players={players} />
-            <PlayerCountControl count={numPlayers} onChange={changePlayerCount} isLandscape={false} />
-          </>}
+      <div style={{ ...ch4CanvasStyle, flex:1, display:'flex', flexDirection:'column', overflow:'hidden' }}>
+        <Ch4PlayAgainBtn show={gameOver} onClick={resetGame} />
+        <div style={{ height:60, flexShrink:0, display:'flex', flexDirection:'row', alignItems:'center', justifyContent:'center', gap:20, padding:'0 16px' }}>
+          <TurnIndicator current={current} gameOver={gameOver} mode={mode} P_COLOR={P_COLOR} isLandscape={false} scores={dtScores} players={players} />
+          <PlayerCountControl count={numPlayers} onChange={changePlayerCount} isLandscape={false} />
         </div>
-        <div style={{ display:'flex', alignItems:'center', justifyContent:'center', padding:20, boxSizing:'border-box' }}>
+        <div style={{ flex:1, minHeight:0, display:'flex', alignItems:'center', justifyContent:'center', padding:20, boxSizing:'border-box' }}>
           {svgBoard}
         </div>
-        <div style={{ display:'flex', alignItems:'center', justifyContent:'center', padding:'0 16px', height:48, flexShrink:0 }}>
-          <ModeSelector mode={mode} onReset={resetGame} />
+        <div style={{ height:48, flexShrink:0, display:'flex', alignItems:'center', justifyContent:'center', padding:'0 16px' }}>
+          {gameOver && gameOverBanner}
         </div>
       </div>
       <IntroText>{dtCaption}</IntroText>
@@ -4897,9 +4925,20 @@ function jmspAI(pieces: JMSPPiece[]): { id: string; to: {row:number;col:number} 
   return pool[Math.floor(Math.random() * pool.length)]
 }
 
+function jmspAIRandom(pieces: JMSPPiece[]): { id: string; to: {row:number;col:number} } | null {
+  const mine = pieces.filter(p => p.player === 'O')
+  const all: { id:string; to:{row:number;col:number} }[] = []
+  for (const p of mine)
+    for (const d of jmspDests(p, pieces))
+      all.push({ id: p.id, to: d })
+  if (!all.length) return null
+  return all[Math.floor(Math.random() * all.length)]
+}
+
 function JmspPage() {
+  const aiDiff = useContext(GameDifficultyCtx)
+  const mode   = useContext(GameModeCtx)
   const isLandscape = useIsLandscape()
-  const [mode, setMode]         = useState<TTTMode>('computer')
   const [pieces, setPieces]     = useState<JMSPPiece[]>(() => JMSP_INIT.map(p => ({...p})))
   const [current, setCurrent]   = useState<'X'|'O'>('X')
   const [selId, setSelId]       = useState<string|null>(null)
@@ -5012,10 +5051,10 @@ function JmspPage() {
     setSelId(null); setDragPath([])
   }
 
-  function resetGame(m: TTTMode = mode) {
+  function resetGame() {
     aiCancel.current = true
     selIdRef.current = null; selPieceRef.current = null; dragPathRef.current = []
-    setMode(m); setPieces(JMSP_INIT.map(p => ({...p})))
+    setPieces(JMSP_INIT.map(p => ({...p})))
     setCurrent('X'); setSelId(null); setDragPath([])
     setAnimState(null); setGameOver(false); setWinner(null)
   }
@@ -5041,7 +5080,7 @@ function JmspPage() {
     aiCancel.current = false
     const t = setTimeout(() => {
       if (aiCancel.current) return
-      const mv = jmspAI(pieces)
+      const mv = aiDiff === 'easy' ? jmspAIRandom(pieces) : jmspAI(pieces)
       if (!mv) return
       const piece = pieces.find(p => p.id === mv.id)!
       const path = jmspPath(piece, mv.to, pieces)
@@ -5162,9 +5201,9 @@ function JmspPage() {
       <>
         <div style={{...ch4CanvasStyle, flex:1, display:'flex', flexDirection:'row', overflow:'hidden'}}>
           <Ch4PlayAgainBtn show={gameOver} onClick={resetGame} />
-          <div style={{flexShrink:0, display:'flex', flexDirection:'column', alignItems:'flex-start', justifyContent:'space-between', padding:'24px 20px'}}>
-            {gameOver ? gameOverBanner : <TurnIndicator current={current} gameOver={gameOver} mode={mode} P_COLOR={P_COLOR} isLandscape={true} />}
-            <ModeSelector mode={mode} onReset={resetGame} />
+          <div style={{width:160, flexShrink:0, display:'flex', flexDirection:'column', alignItems:'flex-start', justifyContent:'space-between', padding:'24px 20px'}}>
+            <TurnIndicator current={current} gameOver={gameOver} mode={mode} P_COLOR={P_COLOR} isLandscape={true} />
+            {gameOver && gameOverBanner}
           </div>
           <div style={{flex:1, minHeight:0, display:'flex', alignItems:'center', justifyContent:'center', padding:24, boxSizing:'border-box'}}>
             {svgBoard}
@@ -5178,16 +5217,16 @@ function JmspPage() {
   }
   return (
     <>
-      <div style={{...ch4CanvasStyle, flex:1, display:'flex', flexDirection:'column', overflow:'hidden', justifyContent:'center'}}>
-          <Ch4PlayAgainBtn show={gameOver} onClick={resetGame} />
-        <div style={{display:'flex', alignItems:'center', justifyContent:'center', padding:'0 16px', height:60, flexShrink:0}}>
-          {gameOver ? gameOverBanner : <TurnIndicator current={current} gameOver={gameOver} mode={mode} P_COLOR={P_COLOR} isLandscape={false} />}
+      <div style={{...ch4CanvasStyle, flex:1, display:'flex', flexDirection:'column', overflow:'hidden'}}>
+        <Ch4PlayAgainBtn show={gameOver} onClick={resetGame} />
+        <div style={{height:60, flexShrink:0, display:'flex', alignItems:'center', justifyContent:'center', padding:'0 16px'}}>
+          <TurnIndicator current={current} gameOver={gameOver} mode={mode} P_COLOR={P_COLOR} isLandscape={false} />
         </div>
-        <div style={{display:'flex', alignItems:'center', justifyContent:'center', padding:20, boxSizing:'border-box'}}>
+        <div style={{flex:1, minHeight:0, display:'flex', alignItems:'center', justifyContent:'center', padding:20, boxSizing:'border-box'}}>
           {svgBoard}
         </div>
-        <div style={{display:'flex', alignItems:'center', justifyContent:'center', padding:'0 16px', height:48, flexShrink:0}}>
-          <ModeSelector mode={mode} onReset={resetGame} />
+        <div style={{height:48, flexShrink:0, display:'flex', alignItems:'center', justifyContent:'center', padding:'0 16px'}}>
+          {gameOver && gameOverBanner}
         </div>
       </div>
       <IntroText>{jmspCaption}</IntroText>
@@ -5280,8 +5319,9 @@ function cmBestMouseMove(cat: number, mouse: number): number {
 }
 
 function CatMousePage() {
+  const aiDiff = useContext(GameDifficultyCtx)
+  const mode   = useContext(GameModeCtx)
   const isLandscape = useIsLandscape()
-  const [mode,          setMode]          = useState<TTTMode>('computer')
   const [computerIsCat, setComputerIsCat] = useState(true)
   const [catPos,        setCatPos]        = useState(0)
   const [mousePos,      setMousePos]      = useState(5)
@@ -5297,9 +5337,9 @@ function CatMousePage() {
   const CAT_COLOR   = RED
   const MOUSE_COLOR = BLUE
 
-  function resetGame(m: TTTMode = mode) {
+  function resetGame() {
     const newComputerIsCat = Math.random() < 0.5
-    setMode(m); setComputerIsCat(newComputerIsCat)
+    setComputerIsCat(newComputerIsCat)
     setCatPos(0); setMousePos(5)
     setTurn('mouse'); setGameOver(false)
     dragFromRef.current = null
@@ -5313,12 +5353,18 @@ function CatMousePage() {
     if (!isComputerTurn) return
     const t = setTimeout(() => {
       if (computerIsCat) {
-        const next = cmBestCatMove(catPos, mousePos)
+        const next = aiDiff === 'easy'
+          ? CM_ADJ[catPos][Math.floor(Math.random() * CM_ADJ[catPos].length)]
+          : cmBestCatMove(catPos, mousePos)
         setCatPos(next)
         if (next === mousePos) { setGameOver(true); playSound('lose') }
         else { playSound('turn'); setTurn('mouse') }
       } else {
-        const next = cmBestMouseMove(catPos, mousePos)
+        const validMoves = CM_ADJ[mousePos].filter((n: number) => n !== catPos)
+        const pool = validMoves.length > 0 ? validMoves : CM_ADJ[mousePos]
+        const next = aiDiff === 'easy'
+          ? pool[Math.floor(Math.random() * pool.length)]
+          : cmBestMouseMove(catPos, mousePos)
         setMousePos(next)
         if (next === catPos) { setGameOver(true); playSound('lose'); return }
         playSound('turn'); setTurn('cat')
@@ -5472,7 +5518,6 @@ function CatMousePage() {
     O: <LucideCircle size={13} strokeWidth={2.5} color="#fff" />,
   }
   const CM_LABELS: Record<'X'|'O', string> = { X: 'Robber', O: 'Cop' }
-  const modeSelector = <ModeSelector mode={mode} onReset={resetGame} />
   // eslint-disable-next-line react-hooks/exhaustive-deps
   const cmCaption = useMemo(() => ch4Caption('Cops vs Robbers', 'The cop is chasing the robber — catch it to win!', () => setRulesOpen(true)), [])
   const cmRules = (
@@ -5495,9 +5540,9 @@ function CatMousePage() {
       <>
         <div style={{ ...ch4CanvasStyle, flex: 1, display: 'flex', flexDirection: 'row', overflow: 'hidden' }}>
           <Ch4PlayAgainBtn show={gameOver} onClick={resetGame} />
-          <div style={{ flexShrink: 0, display: 'flex', flexDirection: 'column', alignItems: 'flex-start', justifyContent: 'space-between', padding: '24px 20px' }}>
-            {gameOver ? gameOverBanner : <TurnIndicator current={turn === 'mouse' ? 'X' : 'O'} gameOver={gameOver} mode={mode} P_COLOR={CM_P_COLOR} isLandscape={true} icons={CM_ICONS} labels={CM_LABELS} />}
-            {modeSelector}
+          <div style={{ width: 160, flexShrink: 0, display: 'flex', flexDirection: 'column', alignItems: 'flex-start', justifyContent: 'space-between', padding: '24px 20px' }}>
+            <TurnIndicator current={turn === 'mouse' ? 'X' : 'O'} gameOver={gameOver} mode={mode} P_COLOR={CM_P_COLOR} isLandscape={true} icons={CM_ICONS} labels={CM_LABELS} />
+            {gameOver && gameOverBanner}
           </div>
           <div style={{ flex: 1, minHeight: 0, display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 24, boxSizing: 'border-box' }}>
             {svgBoard}
@@ -5512,16 +5557,16 @@ function CatMousePage() {
 
   return (
     <>
-      <div style={{ ...ch4CanvasStyle, flex: 1, display: 'flex', flexDirection: 'column', overflow: 'hidden', justifyContent: 'center' }}>
-          <Ch4PlayAgainBtn show={gameOver} onClick={resetGame} />
-        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', padding: '0 16px', height: 60, flexShrink: 0 }}>
-          {gameOver ? gameOverBanner : <TurnIndicator current={turn === 'mouse' ? 'X' : 'O'} gameOver={gameOver} mode={mode} P_COLOR={CM_P_COLOR} isLandscape={false} icons={CM_ICONS} labels={CM_LABELS} />}
+      <div style={{ ...ch4CanvasStyle, flex: 1, display: 'flex', flexDirection: 'column', overflow: 'hidden' }}>
+        <Ch4PlayAgainBtn show={gameOver} onClick={resetGame} />
+        <div style={{ height: 60, flexShrink: 0, display: 'flex', alignItems: 'center', justifyContent: 'center', padding: '0 16px' }}>
+          <TurnIndicator current={turn === 'mouse' ? 'X' : 'O'} gameOver={gameOver} mode={mode} P_COLOR={CM_P_COLOR} isLandscape={false} icons={CM_ICONS} labels={CM_LABELS} />
         </div>
-        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 20, boxSizing: 'border-box' }}>
+        <div style={{ flex: 1, minHeight: 0, display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 20, boxSizing: 'border-box' }}>
           {svgBoard}
         </div>
-        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', padding: '0 16px', height: 48, flexShrink: 0 }}>
-          {modeSelector}
+        <div style={{ height: 48, flexShrink: 0, display: 'flex', alignItems: 'center', justifyContent: 'center', padding: '0 16px' }}>
+          {gameOver && gameOverBanner}
         </div>
       </div>
       <IntroText>{cmCaption}</IntroText>
@@ -5646,9 +5691,16 @@ function szAI(board: ('X'|'O'|null)[]): [number,number] | null {
   return bestMove
 }
 
+function szAIRandom(board: ('X'|'O'|null)[]): [number,number] | null {
+  const moves = szAllMoves(board, 'O')
+  if (!moves.length) return null
+  return moves[Math.floor(Math.random() * moves.length)]
+}
+
 function SanziPage() {
+  const aiDiff = useContext(GameDifficultyCtx)
+  const mode   = useContext(GameModeCtx)
   const isLandscape = useIsLandscape()
-  const [mode, setMode]         = useState<TTTMode>('computer')
   const [board, setBoard]       = useState<('X'|'O'|null)[]>(() => [...SZ_INIT])
   const [current, setCurrent]   = useState<'X'|'O'>('X')
   const [selIdx, setSelIdx]     = useState<number|null>(null)
@@ -5661,8 +5713,8 @@ function SanziPage() {
 
   const P_COLOR: Record<'X'|'O', string> = { X: BLUE, O: RED }
 
-  function resetGame(m: TTTMode = mode) {
-    setMode(m); setBoard([...SZ_INIT]); setCurrent('X')
+  function resetGame() {
+    setBoard([...SZ_INIT]); setCurrent('X')
     setSelIdx(null); selIdxRef.current = null
     setDragPt(null); setGameOver(false); setWinner(null)
   }
@@ -5686,7 +5738,7 @@ function SanziPage() {
   useEffect(() => {
     if (mode !== 'computer' || current !== 'O' || gameOver) return
     const t = setTimeout(() => {
-      const mv = szAI(board)
+      const mv = aiDiff === 'easy' ? szAIRandom(board) : szAI(board)
       if (mv) doMove(mv[0], mv[1])
     }, 500)
     return () => clearTimeout(t)
@@ -5825,9 +5877,9 @@ function SanziPage() {
     <>
       <div style={{...ch4CanvasStyle, flex:1, display:'flex', flexDirection:'row', overflow:'hidden'}}>
         <Ch4PlayAgainBtn show={gameOver} onClick={resetGame} />
-        <div style={{flexShrink:0, display:'flex', flexDirection:'column', alignItems:'flex-start', justifyContent:'space-between', padding:'24px 20px'}}>
-          {gameOver ? gameOverBanner : <TurnIndicator current={current} gameOver={gameOver} mode={mode} P_COLOR={P_COLOR} isLandscape={true} />}
-          <ModeSelector mode={mode} onReset={resetGame} />
+        <div style={{width:160, flexShrink:0, display:'flex', flexDirection:'column', alignItems:'flex-start', justifyContent:'space-between', padding:'24px 20px'}}>
+          <TurnIndicator current={current} gameOver={gameOver} mode={mode} P_COLOR={P_COLOR} isLandscape={true} />
+          {gameOver && gameOverBanner}
         </div>
         <div style={{flex:1, minHeight:0, display:'flex', alignItems:'center', justifyContent:'center', padding:24, boxSizing:'border-box'}}>
           {svgBoard}
@@ -5843,14 +5895,14 @@ function SanziPage() {
     <>
       <div style={{...ch4CanvasStyle, flex:1, display:'flex', flexDirection:'column', overflow:'hidden'}}>
         <Ch4PlayAgainBtn show={gameOver} onClick={resetGame} />
-        <div style={{display:'flex', alignItems:'center', justifyContent:'center', padding:'0 16px', height:60, flexShrink:0}}>
-          {gameOver ? gameOverBanner : <TurnIndicator current={current} gameOver={gameOver} mode={mode} P_COLOR={P_COLOR} isLandscape={false} />}
+        <div style={{height:60, flexShrink:0, display:'flex', alignItems:'center', justifyContent:'center', padding:'0 16px'}}>
+          <TurnIndicator current={current} gameOver={gameOver} mode={mode} P_COLOR={P_COLOR} isLandscape={false} />
         </div>
         <div style={{flex:1, minHeight:0, display:'flex', alignItems:'center', justifyContent:'center', padding:20, boxSizing:'border-box'}}>
           {svgBoard}
         </div>
-        <div style={{display:'flex', alignItems:'center', justifyContent:'center', padding:'0 16px', height:48, flexShrink:0}}>
-          <ModeSelector mode={mode} onReset={resetGame} />
+        <div style={{height:48, flexShrink:0, display:'flex', alignItems:'center', justifyContent:'center', padding:'0 16px'}}>
+          {gameOver && gameOverBanner}
         </div>
       </div>
       <IntroText>{szCaption}</IntroText>
@@ -6821,6 +6873,13 @@ function CS4Page() {
   })
   return <ColorSudokuPage cfg={cfg} />
 }
+function CS4EasyPage() {
+  const [cfg] = useState<CSCfg>(() => {
+    const easy = CS4_PUZZLES_EASY[Math.floor(Math.random() * CS4_PUZZLES_EASY.length)]
+    return { ...CS4_CFG, puzzle: easy }
+  })
+  return <ColorSudokuPage cfg={cfg} />
+}
 function CS6Page() { return <ColorSudokuPage cfg={CS6_CFG} /> }
 
 // Each tile shows 2 stacked dots. Find all tiles that match the prompt.
@@ -7137,6 +7196,9 @@ function LookAndFindP5() {
 function LookAndFindP6() {
   return <LookAndFind colors={LAF_PAL3} cols={5} rows={3} numRounds={3} dotCount={4} flipPrompt />
 }
+// Easy/Hard difficulty variants
+function LafEasy() { return <LookAndFind colors={LAF_PAL3} cols={5} rows={3} numRounds={3} dotCount={2} maxDotD={64} /> }
+function LafHard() { return <LookAndFind colors={LAF_PAL3} cols={5} rows={3} numRounds={3} dotCount={4} maxDotD={64} flipPrompt /> }
 
 const MJ_IMGS = [mj1, mj2, mj3, mj4, mj5, mj6, mj7, mj8, mj9]
 
@@ -7471,7 +7533,7 @@ function MahjongL2Page() {
 // ── Growing Tree (force-directed) ─────────────────────────────────────────────
 
 const GT_COLORS = ['#ef4444', '#f97316', '#eab308', '#22c55e', '#3b82f6', '#6366f1', '#a855f7']
-const GT_VW = 500, GT_VH = 600
+const GT_VW = 360, GT_VH = 600
 const GT_R = 12
 const GT_MAX_LV = 7
 const GT_ROOT_Y = 520  // L1 near center bottom
@@ -7721,7 +7783,7 @@ function GrowingTreePage() {
 
   function onTap(id: string) {
     const nodes = nodesRef.current, n = nodes.get(id)
-    if (!n || n.level >= GT_MAX_LV) return
+    if (!n || n.level === 1 || n.level >= GT_MAX_LV) return
     const next = (n.count + 1) % 5
     while (n.slots.length < next) {
       const si = n.slots.length
@@ -7755,7 +7817,7 @@ function GrowingTreePage() {
     <>
       {rulesOpen && <Ch4RulesModal title="How to play Growing Tree" onClose={() => setRulesOpen(false)}>{gtRules}</Ch4RulesModal>}
       <div style={{ ...ch4CanvasStyle, flex: 1, display: 'flex', alignItems: 'center', justifyContent: 'center', overflow: 'hidden' }}>
-        <svg viewBox={`0 0 ${GT_VW} ${GT_VH}`}
+        <svg viewBox={`0 0 ${GT_VW} ${GT_VH}`} preserveAspectRatio="xMidYMax meet"
           style={{ width: '100%', height: '100%', display: 'block', touchAction: 'none', userSelect: 'none' }}
         >
           {edges.map(([pid, cid]) => {
@@ -7771,12 +7833,13 @@ function GrowingTreePage() {
           })}
           {visNodes.map(n => {
             const nodeAge = n.born === 0 ? Infinity : Date.now() - n.born
+            const interactive = n.level > 1
             return (
               <circle key={n.id} cx={n.x} cy={n.y} r={GT_R}
                 fill={GT_COLORS[n.level - 1]}
                 opacity={Math.min(1, nodeAge / 350)}
-                style={{ cursor: 'pointer' }}
-                onClick={() => onTap(n.id)}
+                style={{ cursor: interactive ? 'pointer' : 'default' }}
+                onClick={interactive ? () => onTap(n.id) : undefined}
               />
             )
           })}
@@ -7807,7 +7870,7 @@ function snFreeFood(snake: SnPt[]): SnPt {
   return free[Math.floor(Math.random() * free.length)]
 }
 
-function snMkPage(tickMs: number): React.ComponentType {
+function snMkPage(tickMs: number, wrap = false): React.ComponentType {
   function SnakePage() {
     const active = useContext(PageActiveCtx)
     const [, tick] = useState(0)
@@ -7818,7 +7881,7 @@ function snMkPage(tickMs: number): React.ComponentType {
     const dirRef      = useRef<SnDir>('R')
     const nextDirRef  = useRef<SnDir>('R')
     const foodRef     = useRef<SnPt>(snFreeFood([{ x: 7, y: 9 }]))
-    const stateRef    = useRef<'idle' | 'running' | 'dead' | 'won'>('idle')
+    const stateRef    = useRef<'idle' | 'running' | 'paused' | 'dead' | 'won'>('idle')
     const wonRef      = useRef(false)
     const lastTRef    = useRef(0)
     const rafRef      = useRef<number>()
@@ -7841,7 +7904,7 @@ function snMkPage(tickMs: number): React.ComponentType {
         const map: Record<string, SnDir> = { ArrowUp: 'U', ArrowDown: 'D', ArrowLeft: 'L', ArrowRight: 'R' }
         const d = map[e.key]; if (!d) return
         if (dirRef.current !== SN_OPP[d]) nextDirRef.current = d
-        if (stateRef.current === 'idle') { stateRef.current = 'running'; lastTRef.current = performance.now() }
+        if (stateRef.current === 'idle' || stateRef.current === 'paused') { stateRef.current = 'running'; lastTRef.current = performance.now() }
       }
       window.addEventListener('keydown', onKey)
       return () => window.removeEventListener('keydown', onKey)
@@ -7858,14 +7921,21 @@ function snMkPage(tickMs: number): React.ComponentType {
           const { x: hx, y: hy } = snakeRef.current[0]
           const nx = hx + (dirRef.current === 'L' ? -1 : dirRef.current === 'R' ? 1 : 0)
           const ny = hy + (dirRef.current === 'U' ? -1 : dirRef.current === 'D' ? 1 : 0)
-          if (nx < 0 || nx >= SN_COLS || ny < 0 || ny >= SN_ROWS ||
-              snakeRef.current.some(p => p.x === nx && p.y === ny)) {
+          let fx = nx, fy = ny
+          if (wrap) {
+            fx = ((nx % SN_COLS) + SN_COLS) % SN_COLS
+            fy = ((ny % SN_ROWS) + SN_ROWS) % SN_ROWS
+          } else if (nx < 0 || nx >= SN_COLS || ny < 0 || ny >= SN_ROWS) {
             stateRef.current = 'dead'; tick(n => n + 1)
             rafRef.current = requestAnimationFrame(loop); return
           }
-          const ate = nx === foodRef.current.x && ny === foodRef.current.y
+          if (snakeRef.current.some(p => p.x === fx && p.y === fy)) {
+            stateRef.current = 'dead'; tick(n => n + 1)
+            rafRef.current = requestAnimationFrame(loop); return
+          }
+          const ate = fx === foodRef.current.x && fy === foodRef.current.y
           // Shift head position forward; keep tail unless ate
-          const nextSnake = [{ x: nx, y: ny }, ...snakeRef.current]
+          const nextSnake = [{ x: fx, y: fy }, ...snakeRef.current]
           if (!ate) { nextSnake.pop(); colorsRef.current = colorsRef.current.slice(0, nextSnake.length) }
           snakeRef.current = nextSnake
           if (ate) {
@@ -7897,7 +7967,7 @@ function snMkPage(tickMs: number): React.ComponentType {
       const d: SnDir = Math.abs(dx) > Math.abs(dy) ? (dx > 0 ? 'R' : 'L') : (dy > 0 ? 'D' : 'U')
       if (dirRef.current !== SN_OPP[d]) {
         nextDirRef.current = d
-        if (stateRef.current === 'idle') { stateRef.current = 'running'; lastTRef.current = performance.now(); tick(n => n + 1) }
+        if (stateRef.current === 'idle' || stateRef.current === 'paused') { stateRef.current = 'running'; lastTRef.current = performance.now(); tick(n => n + 1) }
       }
       swipeRef.current = { x: e.clientX, y: e.clientY }
     }
@@ -7907,6 +7977,8 @@ function snMkPage(tickMs: number): React.ComponentType {
       swipeRef.current = null
       if (Math.abs(dx) < 8 && Math.abs(dy) < 8) {
         if (stateRef.current === 'idle') { stateRef.current = 'running'; lastTRef.current = performance.now(); tick(n => n + 1) }
+        else if (stateRef.current === 'running') { stateRef.current = 'paused'; tick(n => n + 1) }
+        else if (stateRef.current === 'paused') { stateRef.current = 'running'; lastTRef.current = performance.now(); tick(n => n + 1) }
         else if (stateRef.current === 'dead') reset()
       }
     }
@@ -7939,15 +8011,23 @@ function snMkPage(tickMs: number): React.ComponentType {
             {/* Snake — dots only, colored by eaten sequence */}
             {snake.map((p, i) => (
               <circle key={i} cx={cx(p)} cy={cy(p)} r={SN_R}
-                fill={colors[i] ?? GT_COLORS[0]} stroke="#fff" strokeWidth={2} />
+                fill={colors[i] ?? GT_COLORS[0]} stroke="#fff" strokeWidth={2}
+                style={{ transition: `cx ${Math.round(tickMs * 0.6)}ms linear, cy ${Math.round(tickMs * 0.6)}ms linear` }} />
             ))}
 
             {/* Score */}
-            {state === 'running' && (
+            {(state === 'running' || state === 'paused') && (
               <text x={SN_VW - 8} y={20} textAnchor="end" fontSize={13} fontWeight={800}
                 fill="#ccc" fontFamily="inherit">{snake.length} / {SN_WIN}</text>
             )}
 
+            {state === 'paused' && <>
+              <rect x={0} y={0} width={SN_VW} height={SN_VH} fill="#fff" opacity={0.55} />
+              <text x={SN_VW / 2} y={SN_VH / 2 - 14} textAnchor="middle" dominantBaseline="middle"
+                fontSize={22} fontWeight={900} fill={RED} fontFamily="inherit">Paused ⏸</text>
+              <text x={SN_VW / 2} y={SN_VH / 2 + 14} textAnchor="middle" dominantBaseline="middle"
+                fontSize={13} fill={RED} opacity={0.7} fontFamily="inherit">Tap to resume</text>
+            </>}
             {state === 'idle' && (
               <text x={SN_VW / 2} y={SN_VH / 2} textAnchor="middle" dominantBaseline="middle"
                 fontSize={18} fontWeight={800} fill={RED} fontFamily="inherit">Tap or swipe to start!</text>
@@ -7976,6 +8056,9 @@ const SnakePage1 = snMkPage(400)
 const SnakePage2 = snMkPage(260)
 const SnakePage3 = snMkPage(160)
 
+const SnakeEasy = snMkPage(320, true)   // 80% as slow as before, edges wrap around
+const SnakeHard = snMkPage(160, false)  // faster, die on edge
+
 // ── Game registry ─────────────────────────────────────────────────────────────
 
 type CompletionCfg = {
@@ -7991,6 +8074,8 @@ type GameDef = {
   group: string
   pages: React.ComponentType[]
   completion: CompletionCfg
+  hasDifficulty?: boolean
+  hasBoardMode?: boolean
 }
 
 const GAMES: GameDef[] = [
@@ -8031,104 +8116,117 @@ const GAMES: GameDef[] = [
     title: 'Snake',
     emoji: '🐍',
     group: 'Action',
-    pages: [SnakePage1, SnakePage2, SnakePage3],
+    pages: [mkDiffGame(SnakeEasy, SnakeHard)],
     completion: { text: 'Hissss! 🐍' },
+    hasDifficulty: true,
   },
   {
     id: 'red-dot-jump',
     title: 'Dino Jump',
     emoji: '🦖',
     group: 'Action',
-    pages: [Ch3Page1, Ch3Page1L2, Ch3Page1L3],
+    pages: [mkDiffGame(DinoEasy, DinoHard)],
     completion: { text: 'Woohoo!' },
+    hasDifficulty: true,
   },
   {
     id: 'cloud-hop',
     title: 'Cloud Hop',
     emoji: '☁️',
     group: 'Action',
-    pages: [Ch3Page2, Ch3Page2L2, Ch3Page2L3],
+    pages: [mkDiffGame(CloudEasy, CloudHard)],
     completion: { text: 'Woohoo!' },
+    hasDifficulty: true,
   },
   {
     id: 'flappy-dot',
     title: 'Flappy Dot',
     emoji: '🐦',
     group: 'Action',
-    pages: [Ch3Page3, Ch3Page3L2, Ch3Page3L3],
+    pages: [mkDiffGame(FlappyEasy, FlappyHard)],
     completion: { text: 'Woohoo!' },
+    hasDifficulty: true,
   },
   {
     id: 'tic-tac-toe',
     title: 'Tic Tac Toe',
     emoji: '⭕',
     group: 'Board Games',
-    pages: [TicTacToePage],
+    pages: [mkDiffGame(TicTacToePage, TicTacToePage)],
     completion: { text: 'Amazing!', emojiIcon: '🏆', subtitle: 'You beat me at Tic Tac Toe!' },
+    hasDifficulty: true, hasBoardMode: true,
   },
   {
     id: 'dots-boxes',
     title: 'Dots & Boxes',
     emoji: '⬛',
     group: 'Board Games',
-    pages: [DotsAndBoxesPage],
+    pages: [mkDiffGame(DotsAndBoxesPage, DotsAndBoxesPage)],
     completion: { text: 'Great job!', emojiIcon: '🎯' },
+    hasDifficulty: true, hasBoardMode: true,
   },
   {
     id: 'dot-triangles',
     title: 'Dots & Triangles',
     emoji: '🔺',
     group: 'Board Games',
-    pages: [DotTrianglesPage],
+    pages: [mkDiffGame(DotTrianglesPage, DotTrianglesPage)],
     completion: { text: 'Great job!', emojiIcon: '⭐' },
+    hasDifficulty: true, hasBoardMode: true,
   },
   {
     id: 'cat-mouse',
     title: 'Cat & Mouse',
     emoji: '🐭',
     group: 'Board Games',
-    pages: [CatMousePage],
+    pages: [mkDiffGame(CatMousePage, CatMousePage)],
     completion: { text: 'Amazing!', emojiIcon: '🎊' },
+    hasDifficulty: true, hasBoardMode: true,
   },
   {
     id: 'jump-chess',
     title: 'Jump Chess',
     emoji: '🐓',
     group: 'Board Games',
-    pages: [JmspPage],
+    pages: [mkDiffGame(JmspPage, JmspPage)],
     completion: { text: 'Amazing!', emojiIcon: '🎉' },
+    hasDifficulty: true, hasBoardMode: true,
   },
   {
     id: 'sanzi',
     title: 'Three Men\'s Morris',
     emoji: '🍡',
     group: 'Board Games',
-    pages: [SanziPage],
+    pages: [mkDiffGame(SanziPage, SanziPage)],
     completion: { text: 'Amazing!', emojiIcon: '🎉' },
+    hasDifficulty: true, hasBoardMode: true,
   },
   {
     id: 'color-sudoku',
     title: 'Color Sudoku',
     emoji: '🎨',
     group: 'Puzzles',
-    pages: [CS1Page, CS4Page, CS6Page],
+    pages: [mkDiffGame(CS4EasyPage, CS6Page)],
     completion: { text: 'Amazing!', emojiIcon: '🏆' },
+    hasDifficulty: true,
   },
   {
     id: 'look-find',
     title: 'Look & Find',
     emoji: '🔍',
     group: 'Puzzles',
-    pages: [LookAndFindP4, LookAndFindP5, LookAndFindP6],
+    pages: [mkDiffGame(LafEasy, LafHard)],
     completion: { text: 'Amazing!', emojiIcon: '🎉' },
+    hasDifficulty: true,
   },
   {
     id: 'mahjong',
     title: 'Mahjong',
     emoji: '🀄',
     group: 'Puzzles',
-    pages: [MahjongPage, MahjongL2Page],
+    pages: [mkDiffGame(MahjongPage, MahjongL2Page)],
     completion: { text: 'Amazing!', emojiIcon: '🀄' },
+    hasDifficulty: true,
   },
 ]
 
@@ -8314,6 +8412,8 @@ export default function PressHere() {
   const [speakText,    setSpeakText]  = useState('')
   const [done,         setDone]       = useState(false)
   const [globalKey,    setGlobalKey]  = useState(0)
+  const [difficulty,   setDifficulty] = useState<'easy' | 'hard'>('easy')
+  const [boardMode,    setBoardMode]  = useState<'computer' | 'two-player'>('computer')
   const [mountedPages, setMountedPages] = useState<Set<number>>(() => new Set([0, 1]))
   const [wellDone,     setWellDone]   = useState(false)
   const [gameId,       setGameId]     = useState(() => {
@@ -8325,6 +8425,8 @@ export default function PressHere() {
   })
   const [showPanel,    setShowPanel]  = useState(false)
   const [ch2Shapes,    setCh2Shapes]  = useState<ShapeDef[]>(() => pickRandomShapes(7))
+  const [switchToast,  setSwitchToast] = useState<string | null>(null)
+  const toastTimerRef  = useRef<ReturnType<typeof setTimeout> | null>(null)
   const handoffRef     = useRef<Handoff>({ page4Dots: null, page5Dots: null, page6Dots: null, ch2p2Dots: null, ch2LatestDots: null })
   const canvasAreaRef  = useRef<HTMLDivElement>(null)
   const firstRenderRef = useRef(true)
@@ -8370,6 +8472,32 @@ export default function PressHere() {
     handoffRef.current = { page4Dots: null, page5Dots: null, page6Dots: null, ch2p2Dots: null, ch2LatestDots: null }
   }
 
+  function showToast(msg: string) {
+    if (toastTimerRef.current) clearTimeout(toastTimerRef.current)
+    setSwitchToast(msg)
+    toastTimerRef.current = setTimeout(() => setSwitchToast(null), 1600)
+  }
+
+  function selectDifficulty(d: 'easy' | 'hard') {
+    if (difficulty === d) return
+    setDifficulty(d)
+    setGlobalKey(k => k + 1)
+    setPage(0)
+    setDone(false)
+    setWellDone(false)
+    showToast(d === 'easy' ? '🍃 Easy' : '🌪️ Hard')
+  }
+
+  function selectBoardMode(m: 'computer' | 'two-player') {
+    if (boardMode === m) return
+    setBoardMode(m)
+    setGlobalKey(k => k + 1)
+    setPage(0)
+    setDone(false)
+    setWellDone(false)
+    showToast(m === 'computer' ? '🤖 vs Computer' : '👥 2 Players')
+  }
+
   // Page-change fade animation
   useLayoutEffect(() => {
     if (firstRenderRef.current) { firstRenderRef.current = false; return }
@@ -8409,7 +8537,7 @@ export default function PressHere() {
 
   const nextGame = GAMES[(GAMES.indexOf(currentGame) + 1) % GAMES.length]
 
-  if (wellDone) return (
+  if (wellDone && currentGame.id === 'intro') return (
     <GameCompleteScreen
       game={currentGame}
       onReplay={() => startGame(gameId)}
@@ -8449,7 +8577,7 @@ export default function PressHere() {
                 <span style={{ width: 'clamp(7px,1.2vw,10px)', height: 'clamp(7px,1.2vw,10px)', borderRadius: '50%', background: BLUE,   flexShrink: 0, display: 'inline-block' }} />
               </div>
 
-              {/* Game switcher + Replay */}
+              {/* Game switcher + difficulty toggle + Replay */}
               <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
                 <button
                   onClick={() => setShowPanel(true)}
@@ -8471,11 +8599,67 @@ export default function PressHere() {
                     <path d="M1 1l4 4 4-4" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round"/>
                   </svg>
                 </button>
+                {currentGame.hasDifficulty && (
+                  <div style={{
+                    display: 'flex', alignItems: 'center', flexShrink: 0,
+                    border: '1.5px solid #d0ccc5', borderRadius: 20,
+                    background: '#fff', overflow: 'hidden',
+                    height: 34,
+                  }}>
+                    {(['easy', 'hard'] as const).map(d => (
+                      <button
+                        key={d}
+                        onClick={() => selectDifficulty(d)}
+                        style={{
+                          height: '100%',
+                          padding: isMobile ? '0 9px' : '0 11px',
+                          border: 'none',
+                          background: difficulty === d ? '#e8e3db' : 'transparent',
+                          cursor: difficulty === d ? 'default' : 'pointer',
+                          fontSize: 16, lineHeight: 1,
+                          display: 'flex', alignItems: 'center', justifyContent: 'center',
+                          transition: 'background 0.15s ease',
+                        }}
+                      >
+                        {d === 'easy' ? '🍃' : '🌪️'}
+                      </button>
+                    ))}
+                  </div>
+                )}
+                {currentGame.hasBoardMode && (
+                  <div style={{
+                    display: 'flex', alignItems: 'center', flexShrink: 0,
+                    border: '1.5px solid #d0ccc5', borderRadius: 20,
+                    background: '#fff', overflow: 'hidden',
+                    height: 34,
+                  }}>
+                    {(['computer', 'two-player'] as const).map(m => (
+                      <button
+                        key={m}
+                        onClick={() => selectBoardMode(m)}
+                        style={{
+                          height: '100%',
+                          padding: isMobile ? '0 9px' : '0 11px',
+                          border: 'none',
+                          background: boardMode === m ? '#e8e3db' : 'transparent',
+                          cursor: boardMode === m ? 'default' : 'pointer',
+                          fontSize: 16, lineHeight: 1,
+                          display: 'flex', alignItems: 'center', justifyContent: 'center',
+                          transition: 'background 0.15s ease',
+                        }}
+                      >
+                        {m === 'computer' ? '🤖' : '👥'}
+                      </button>
+                    ))}
+                  </div>
+                )}
                 <ReplayIconBtn onClick={() => startGame(gameId)} />
               </div>
             </div>
 
             {/* Canvas area */}
+            <GameDifficultyCtx.Provider value={difficulty}>
+            <GameModeCtx.Provider value={boardMode}>
             <div ref={canvasAreaRef} key={globalKey} style={{ flex: 1, minHeight: 0, position: 'relative' }}>
               {activePages.map((P, i) => {
                 if (!mountedPages.has(i)) return <div key={i} style={{ display: 'none' }} />
@@ -8487,7 +8671,23 @@ export default function PressHere() {
                   </PageActiveCtx.Provider>
                 )
               })}
+              {/* Switch confirmation toast */}
+              {switchToast && (
+                <div style={{
+                  position: 'absolute', top: 16, left: '50%', transform: 'translateX(-50%)',
+                  background: 'rgba(30,30,30,0.82)', color: '#fff',
+                  padding: '8px 18px', borderRadius: 40,
+                  fontSize: 15, fontWeight: 700, fontFamily: 'inherit',
+                  pointerEvents: 'none', whiteSpace: 'nowrap',
+                  animation: 'toastIn 0.18s ease',
+                  zIndex: 100,
+                }}>
+                  {switchToast}
+                </div>
+              )}
             </div>
+            </GameModeCtx.Provider>
+            </GameDifficultyCtx.Provider>
 
             {/* Caption + Next button */}
             <div style={{ position: 'relative', display: 'flex', alignItems: 'center', justifyContent: 'flex-start', marginTop: isMobile ? 8 : 14, minHeight: isMobile ? 38 : 46 }}>
