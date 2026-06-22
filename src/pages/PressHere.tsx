@@ -7860,6 +7860,22 @@ const SN_WIN = 13  // red→orange→…→violet→red→…→indigo = 13 dots
 type SnDir = 'U' | 'D' | 'L' | 'R'
 type SnPt = { x: number; y: number }
 const SN_OPP: Record<SnDir, SnDir> = { U: 'D', D: 'U', L: 'R', R: 'L' }
+const snCx = (x: number) => x * SN_CELL + SN_CELL / 2
+const snCy = (y: number) => y * SN_CELL + SN_CELL / 2
+
+type SnPx = { x: number; y: number }
+// Wrapping is shown as two independent, edge-local dots rather than one dot sliding across the
+// whole canvas: an "exit" dot nudges a half-cell past the edge it's leaving while fading out, and
+// (after a gap) an "enter" dot nudges in from a half-cell past the opposite edge while fading in.
+type SnHeadAnim = {
+  t0: number
+  exitMs: number
+  enterMs: number
+  exitStart: SnPx    // last on-screen head position before it exits
+  exitOffset: SnPx   // small push (≤ half a cell), in the direction of travel
+  enterEnd: SnPx     // the actual on-canvas wrapped cell, where the enter dot lands
+  enterOffset: SnPx  // same small push, used to compute the enter dot's off-canvas starting point
+}
 
 function snFreeFood(snake: SnPt[]): SnPt {
   const occ = new Set(snake.map(p => `${p.x},${p.y}`))
@@ -7886,6 +7902,13 @@ function snMkPage(tickMs: number, wrap = false): React.ComponentType {
     const lastTRef    = useRef(0)
     const rafRef      = useRef<number>()
     const swipeRef    = useRef<{ x: number; y: number } | null>(null)
+    // Body segments: true for the one tick a given index's position teleports across an edge — skip its CSS transition that tick.
+    const wrapFlagsRef = useRef<boolean[]>([false])
+    // Head: while non-null, drives the two-dot exit/enter wrap sequence every frame, hiding the
+    // head's normal CSS-transitioned dot in favor of headExitVisRef / headEnterVisRef below.
+    const headAnimRef = useRef<SnHeadAnim | null>(null)
+    const headExitVisRef  = useRef<{ x: number; y: number; opacity: number } | null>(null)
+    const headEnterVisRef = useRef<{ x: number; y: number; opacity: number } | null>(null)
 
     const reset = useCallback(() => {
       snakeRef.current   = [{ x: 7, y: 9 }]
@@ -7894,6 +7917,10 @@ function snMkPage(tickMs: number, wrap = false): React.ComponentType {
       dirRef.current     = 'R'
       nextDirRef.current = 'R'
       foodRef.current    = snFreeFood([{ x: 7, y: 9 }])
+      wrapFlagsRef.current = [false]
+      headAnimRef.current  = null
+      headExitVisRef.current  = null
+      headEnterVisRef.current = null
       stateRef.current   = 'idle'
       lastTRef.current   = 0
       tick(n => n + 1)
@@ -7915,16 +7942,56 @@ function snMkPage(tickMs: number, wrap = false): React.ComponentType {
       let alive = true
       const loop = (ts: number) => {
         if (!alive) return
+        let fxChanged = false
+
+        // Advance the head's wrap animation every frame. Each phase only ever moves its dot a
+        // fraction of a cell near its own edge — never a coordinate spanning the canvas — so
+        // nothing visibly (or invisibly-but-measurably) travels from one edge to the other.
+        const anim = headAnimRef.current
+        if (anim) {
+          const elapsed = ts - anim.t0
+          const total = anim.exitMs + anim.enterMs
+          if (elapsed >= total) {
+            headAnimRef.current = null
+            headExitVisRef.current = null
+            headEnterVisRef.current = null
+          } else if (elapsed < anim.exitMs) {
+            const t = elapsed / anim.exitMs
+            headExitVisRef.current = {
+              x: anim.exitStart.x + anim.exitOffset.x * t,
+              y: anim.exitStart.y + anim.exitOffset.y * t,
+              opacity: 1 - t,
+            }
+            headEnterVisRef.current = null
+          } else {
+            const t = (elapsed - anim.exitMs) / anim.enterMs
+            headExitVisRef.current = null
+            headEnterVisRef.current = {
+              x: anim.enterEnd.x - anim.enterOffset.x * (1 - t),
+              y: anim.enterEnd.y - anim.enterOffset.y * (1 - t),
+              opacity: t,
+            }
+          }
+          fxChanged = true
+        }
+
         if (stateRef.current === 'running' && ts - lastTRef.current >= tickMs) {
           lastTRef.current = ts
+          // Any wrap animation still running when the next tick fires is now stale — the snake
+          // has logically moved on, so drop it rather than let it render a lagging position.
+          headAnimRef.current = null
+          headExitVisRef.current = null
+          headEnterVisRef.current = null
           dirRef.current = nextDirRef.current
           const { x: hx, y: hy } = snakeRef.current[0]
           const nx = hx + (dirRef.current === 'L' ? -1 : dirRef.current === 'R' ? 1 : 0)
           const ny = hy + (dirRef.current === 'U' ? -1 : dirRef.current === 'D' ? 1 : 0)
           let fx = nx, fy = ny
+          let didWrap = false
           if (wrap) {
             fx = ((nx % SN_COLS) + SN_COLS) % SN_COLS
             fy = ((ny % SN_ROWS) + SN_ROWS) % SN_ROWS
+            didWrap = fx !== nx || fy !== ny
           } else if (nx < 0 || nx >= SN_COLS || ny < 0 || ny >= SN_ROWS) {
             stateRef.current = 'dead'; tick(n => n + 1)
             rafRef.current = requestAnimationFrame(loop); return
@@ -7935,9 +8002,39 @@ function snMkPage(tickMs: number, wrap = false): React.ComponentType {
           }
           const ate = fx === foodRef.current.x && fy === foodRef.current.y
           // Shift head position forward; keep tail unless ate
-          const nextSnake = [{ x: fx, y: fy }, ...snakeRef.current]
+          const oldSnake = snakeRef.current
+          const nextSnake = [{ x: fx, y: fy }, ...oldSnake]
           if (!ate) { nextSnake.pop(); colorsRef.current = colorsRef.current.slice(0, nextSnake.length) }
           snakeRef.current = nextSnake
+
+          // Per-segment wrap detection (index 0 excluded — it gets the richer headAnim treatment
+          // below). Each rendered circle is keyed by array index, so the discontinuity to check
+          // for is between this tick's value at index i and *last* tick's value at that same
+          // index i (not i-1 — nextSnake[i] literally equals oldSnake[i-1], so comparing against
+          // that is always a no-op diff).
+          const nextWrapFlags = nextSnake.map((p, i) => {
+            if (i === 0) return false
+            const old = oldSnake[i]
+            return !old || Math.abs(p.x - old.x) > 1 || Math.abs(p.y - old.y) > 1
+          })
+          wrapFlagsRef.current = nextWrapFlags
+
+          if (didWrap) {
+            // Each phase gets ~40% of a tick, leaving headroom so the whole exit+enter sequence
+            // always finishes before the next tick fires.
+            const phaseMs = Math.round(tickMs * 0.4)
+            const ux = dirRef.current === 'L' ? -1 : dirRef.current === 'R' ? 1 : 0
+            const uy = dirRef.current === 'U' ? -1 : dirRef.current === 'D' ? 1 : 0
+            const nudge = SN_CELL * 0.5
+            headAnimRef.current = {
+              t0: ts, exitMs: phaseMs, enterMs: phaseMs,
+              exitStart: { x: snCx(hx), y: snCy(hy) },
+              exitOffset: { x: ux * nudge, y: uy * nudge },
+              enterEnd: { x: snCx(fx), y: snCy(fy) },
+              enterOffset: { x: ux * nudge, y: uy * nudge },
+            }
+          }
+
           if (ate) {
             // Append the eaten color to the tail
             colorsRef.current = [...colorsRef.current, GT_COLORS[foodIdxRef.current]]
@@ -7948,8 +8045,9 @@ function snMkPage(tickMs: number, wrap = false): React.ComponentType {
               foodRef.current = snFreeFood(nextSnake)
             }
           }
-          tick(n => n + 1)
+          fxChanged = true
         }
+        if (fxChanged) tick(n => n + 1)
         rafRef.current = requestAnimationFrame(loop)
       }
       rafRef.current = requestAnimationFrame(loop)
@@ -7985,23 +8083,24 @@ function snMkPage(tickMs: number, wrap = false): React.ComponentType {
 
     const snake = snakeRef.current, colors = colorsRef.current
     const food = foodRef.current, state = stateRef.current
-    const cx = (p: SnPt) => p.x * SN_CELL + SN_CELL / 2
-    const cy = (p: SnPt) => p.y * SN_CELL + SN_CELL / 2
+    const cx = (p: SnPt) => snCx(p.x)
+    const cy = (p: SnPt) => snCy(p.y)
     const foodColor = GT_COLORS[foodIdxRef.current]
+    const wrapFlags = wrapFlagsRef.current
+    const headAnimActive = headAnimRef.current !== null
+    const headExitVis = headExitVisRef.current
+    const headEnterVis = headEnterVisRef.current
 
     return (
       <>
         <div style={{ ...ch4CanvasStyle, flex: 1, display: 'flex', alignItems: 'center', justifyContent: 'center', overflow: 'hidden' }}>
           <svg viewBox={`0 0 ${SN_VW} ${SN_VH}`}
-            style={{ width: '100%', height: '100%', display: 'block', touchAction: 'none', userSelect: 'none' }}
+            style={{ width: '100%', height: '100%', display: 'block', touchAction: 'none', userSelect: 'none', overflow: 'hidden' }}
             onPointerDown={onPointerDown} onPointerMove={onPointerMove} onPointerUp={onPointerUp}
           >
-            {/* Subtle dot grid */}
-            {Array.from({ length: SN_COLS * SN_ROWS }, (_, i) => (
-              <circle key={i} r={1.2}
-                cx={(i % SN_COLS) * SN_CELL + SN_CELL / 2}
-                cy={Math.floor(i / SN_COLS) * SN_CELL + SN_CELL / 2}
-                fill="#ede8df" />
+            {/* Background: easy mode gets a dot grid, hard mode gets no grid at all */}
+            {wrap && Array.from({ length: SN_COLS * SN_ROWS }, (_, i) => (
+              <circle key={i} r={1.2} cx={(i % SN_COLS) * SN_CELL + SN_CELL / 2} cy={Math.floor(i / SN_COLS) * SN_CELL + SN_CELL / 2} fill="#ede8df" />
             ))}
 
             {/* Food — shown in the color the snake will gain */}
@@ -8009,11 +8108,26 @@ function snMkPage(tickMs: number, wrap = false): React.ComponentType {
             <circle cx={cx(food)} cy={cy(food)} r={SN_R} fill={foodColor} stroke="#fff" strokeWidth={2} />
 
             {/* Snake — dots only, colored by eaten sequence */}
-            {snake.map((p, i) => (
-              <circle key={i} cx={cx(p)} cy={cy(p)} r={SN_R}
-                fill={colors[i] ?? GT_COLORS[0]} stroke="#fff" strokeWidth={2}
-                style={{ transition: `cx ${Math.round(tickMs * 0.6)}ms linear, cy ${Math.round(tickMs * 0.6)}ms linear` }} />
-            ))}
+            {snake.map((p, i) => {
+              const isHead = i === 0
+              // While wrapping, the head's normal dot is hidden — the exit/enter dots below stand
+              // in for it, each confined near its own edge instead of crossing the canvas.
+              if (isHead && headAnimActive) return null
+              const transition = wrapFlags[i] ? 'none' : `cx ${Math.round(tickMs * 0.6)}ms linear, cy ${Math.round(tickMs * 0.6)}ms linear`
+              return (
+                <circle key={i} cx={cx(p)} cy={cy(p)} r={SN_R}
+                  fill={colors[i] ?? GT_COLORS[0]} stroke="#fff" strokeWidth={2}
+                  style={{ transition }} />
+              )
+            })}
+            {headExitVis && (
+              <circle cx={headExitVis.x} cy={headExitVis.y} r={SN_R}
+                fill={colors[0] ?? GT_COLORS[0]} stroke="#fff" strokeWidth={2} opacity={headExitVis.opacity} />
+            )}
+            {headEnterVis && (
+              <circle cx={headEnterVis.x} cy={headEnterVis.y} r={SN_R}
+                fill={colors[0] ?? GT_COLORS[0]} stroke="#fff" strokeWidth={2} opacity={headEnterVis.opacity} />
+            )}
 
             {/* Score */}
             {(state === 'running' || state === 'paused') && (
@@ -8058,6 +8172,524 @@ const SnakePage3 = snMkPage(160)
 
 const SnakeEasy = snMkPage(320, true)   // 80% as slow as before, edges wrap around
 const SnakeHard = snMkPage(160, false)  // faster, die on edge
+
+// ── Bubble Pop ─────────────────────────────────────────────────────────────────
+
+const BP_PALETTE = [RED, BLUE, YELLOW, '#22c55e']
+const BP_CELL    = 40
+const BP_R       = BP_CELL / 2 - 1.5
+const BP_ROW_H   = BP_CELL * 0.87
+const BP_SPEED   = 0.62   // viewBox units per ms
+const BP_BURST_MS = 340   // burst-effect lifetime
+const BP_FALL_G   = 0.0012  // gravity for detached bubbles, viewBox units/ms²
+const BP_BUFFER_ROWS = 2  // empty rows always kept at the bottom of the stack for landing room
+const BP_AIM_DASH    = '6 6'    // shared dash pattern for the easy-mode path line and landing ring
+const BP_LANDING_R   = BP_R - 1 // landing-ring radius so its stroke's outer edge matches a real dot's size
+
+type BPCell = { c: number } | null   // c = palette color index
+// Each row tracks its own width/stagger so rows can shift down (new row added on top)
+// without corrupting which columns belong to which row.
+type BPRow  = { wide: boolean; cells: BPCell[] }
+type BPBurst = { id: number; x: number; y: number; col: number; t0: number }
+type BPFall  = { id: number; x: number; y: number; vx: number; vy: number; col: number; t0: number }
+
+function bpSfxShoot() {
+  try {
+    const ctx = new (window.AudioContext || (window as any).webkitAudioContext)()
+    const now = ctx.currentTime
+    const osc = ctx.createOscillator(); const g = ctx.createGain()
+    osc.type = 'triangle'
+    osc.frequency.setValueAtTime(320, now); osc.frequency.exponentialRampToValueAtTime(680, now + 0.08)
+    g.gain.setValueAtTime(0.15, now); g.gain.exponentialRampToValueAtTime(0.001, now + 0.1)
+    osc.connect(g); g.connect(ctx.destination); osc.start(now); osc.stop(now + 0.12)
+  } catch {}
+}
+
+function bpSfxBurst() {
+  try {
+    const ctx = new (window.AudioContext || (window as any).webkitAudioContext)()
+    const now = ctx.currentTime
+    const osc = ctx.createOscillator(); const g = ctx.createGain()
+    osc.type = 'square'
+    osc.frequency.setValueAtTime(900, now); osc.frequency.exponentialRampToValueAtTime(220, now + 0.14)
+    g.gain.setValueAtTime(0.18, now); g.gain.exponentialRampToValueAtTime(0.001, now + 0.16)
+    osc.connect(g); g.connect(ctx.destination); osc.start(now); osc.stop(now + 0.18)
+  } catch {}
+}
+
+function bpSfxFall() {
+  try {
+    const ctx = new (window.AudioContext || (window as any).webkitAudioContext)()
+    const now = ctx.currentTime
+    const osc = ctx.createOscillator(); const g = ctx.createGain()
+    osc.type = 'sine'
+    osc.frequency.setValueAtTime(500, now); osc.frequency.exponentialRampToValueAtTime(120, now + 0.3)
+    g.gain.setValueAtTime(0.14, now); g.gain.exponentialRampToValueAtTime(0.001, now + 0.32)
+    osc.connect(g); g.connect(ctx.destination); osc.start(now); osc.stop(now + 0.34)
+  } catch {}
+}
+
+function bpSfxLose() {
+  try {
+    const ctx = new (window.AudioContext || (window as any).webkitAudioContext)()
+    const now = ctx.currentTime
+    const osc = ctx.createOscillator(); const g = ctx.createGain()
+    osc.type = 'sawtooth'
+    osc.frequency.setValueAtTime(300, now); osc.frequency.exponentialRampToValueAtTime(90, now + 0.5)
+    g.gain.setValueAtTime(0.16, now); g.gain.exponentialRampToValueAtTime(0.001, now + 0.55)
+    osc.connect(g); g.connect(ctx.destination); osc.start(now); osc.stop(now + 0.58)
+  } catch {}
+}
+
+function bpMkPage(cols: number, startRows: number, numColors: number, growMs?: number, predictLanding?: boolean): React.ComponentType {
+  // Bubbles fill edge-to-edge horizontally: VW is exactly the grid width, no side margin.
+  const VW       = cols * BP_CELL
+  const TOP_PAD  = BP_R + 4
+  const SHOOTER_Y_OFF = BP_CELL * 5.5   // empty space below the board for aiming
+  const VH       = TOP_PAD + (startRows - 1) * BP_ROW_H + BP_R + SHOOTER_Y_OFF
+  const SX = VW / 2, SY = VH - BP_CELL * 1.1
+  const AIM_LEN = BP_CELL * 2.6
+
+  const rowWidth = (row: BPRow) => row.cells.length
+  const cellPos  = (rIdx: number, c: number, row: BPRow) => ({
+    x: row.wide ? BP_CELL / 2 + c * BP_CELL : BP_CELL + c * BP_CELL,
+    y: TOP_PAD + rIdx * BP_ROW_H,
+  })
+  const colAt = (x: number, wide: boolean) => Math.round((x - (wide ? BP_CELL / 2 : BP_CELL)) / BP_CELL)
+  const neighbors = (grid: BPRow[], r: number, c: number): [number, number][] => {
+    const row = grid[r]
+    const cand: [number, number][] = [[r, c - 1], [r, c + 1]]
+    for (const ar of [r - 1, r + 1]) {
+      const arow = grid[ar]
+      if (!arow) continue
+      if (row.wide) cand.push([ar, c - 1], [ar, c])
+      else cand.push([ar, c], [ar, c + 1])
+    }
+    return cand.filter(([rr, cc]) => grid[rr] && cc >= 0 && cc < grid[rr].cells.length)
+  }
+
+  function makeRow(wide: boolean, fillRandom: boolean): BPRow {
+    const w = wide ? cols : cols - 1
+    const cells: BPCell[] = []
+    for (let i = 0; i < w; i++) cells.push(fillRandom ? { c: Math.floor(Math.random() * numColors) } : null)
+    return { wide, cells }
+  }
+
+  function trailingEmptyRows(grid: BPRow[]): number {
+    let n = 0
+    for (let i = grid.length - 1; i >= 0; i--) {
+      if (grid[i].cells.every(c => c === null)) n++
+      else break
+    }
+    return n
+  }
+
+  function ensureBuffer(grid: BPRow[]) {
+    while (trailingEmptyRows(grid) < BP_BUFFER_ROWS) {
+      const lastWide = grid.length ? grid[grid.length - 1].wide : true
+      grid.push(makeRow(!lastWide, false))
+    }
+  }
+
+  function growTopRow(grid: BPRow[]) {
+    const newWide = grid.length ? !grid[0].wide : true
+    grid.unshift(makeRow(newWide, true))
+    ensureBuffer(grid)
+  }
+
+  function freshGrid(): BPRow[] {
+    const g: BPRow[] = []
+    for (let r = 0; r < startRows; r++) g.push(makeRow(r % 2 === 0, true))
+    ensureBuffer(g)
+    return g
+  }
+
+  function pickColor(grid: BPRow[]): number {
+    const present = new Set<number>()
+    for (const row of grid) for (const cell of row.cells) if (cell) present.add(cell.c)
+    const arr = present.size ? Array.from(present) : Array.from({ length: numColors }, (_, i) => i)
+    return arr[Math.floor(Math.random() * arr.length)]
+  }
+
+  function sameColorGroup(grid: BPRow[], r0: number, c0: number): [number, number][] {
+    const color = grid[r0].cells[c0]!.c
+    const seen = new Set([`${r0},${c0}`])
+    const stack: [number, number][] = [[r0, c0]]
+    const group: [number, number][] = [[r0, c0]]
+    while (stack.length) {
+      const [r, c] = stack.pop()!
+      for (const [nr, nc] of neighbors(grid, r, c)) {
+        const key = `${nr},${nc}`
+        if (!seen.has(key) && grid[nr].cells[nc] && grid[nr].cells[nc]!.c === color) {
+          seen.add(key); stack.push([nr, nc]); group.push([nr, nc])
+        }
+      }
+    }
+    return group
+  }
+
+  function findFloating(grid: BPRow[]): [number, number][] {
+    const seen = new Set<string>()
+    const stack: [number, number][] = []
+    if (grid[0]) for (let c = 0; c < grid[0].cells.length; c++) if (grid[0].cells[c]) { stack.push([0, c]); seen.add(`0,${c}`) }
+    while (stack.length) {
+      const [r, c] = stack.pop()!
+      for (const [nr, nc] of neighbors(grid, r, c)) {
+        const key = `${nr},${nc}`
+        if (!seen.has(key) && grid[nr].cells[nc]) { seen.add(key); stack.push([nr, nc]) }
+      }
+    }
+    const floating: [number, number][] = []
+    for (let r = 0; r < grid.length; r++)
+      for (let c = 0; c < grid[r].cells.length; c++)
+        if (grid[r].cells[c] && !seen.has(`${r},${c}`)) floating.push([r, c])
+    return floating
+  }
+
+  function isCleared(grid: BPRow[]): boolean {
+    return grid.every(row => row.cells.every(cell => cell === null))
+  }
+
+  // y-coordinate of the lowest row that still has a bubble in it, or null if empty.
+  function lowestOccupiedY(grid: BPRow[]): number | null {
+    for (let r = grid.length - 1; r >= 0; r--) {
+      if (grid[r].cells.some(c => c)) return TOP_PAD + r * BP_ROW_H
+    }
+    return null
+  }
+
+  function aimDir(sx: number, sy: number, tx: number, ty: number) {
+    let dx = tx - sx, dy = ty - sy
+    if (dy > -BP_CELL * 0.4) dy = -BP_CELL * 0.4
+    const len = Math.hypot(dx, dy) || 1
+    return { dx: dx / len, dy: dy / len }
+  }
+
+  // Where a bubble arriving at (x,y) would actually snap into the grid — shared by
+  // the real flight resolution and the landing-spot preview so they always agree.
+  function findLanding(grid: BPRow[], x: number, y: number): { r: number; c: number } | null {
+    let hit: { r: number; c: number } | null = null
+    let hitDist = Infinity
+    for (let r = 0; r < grid.length; r++) {
+      const row = grid[r]
+      for (let c = 0; c < row.cells.length; c++) {
+        if (!row.cells[c]) continue
+        const p = cellPos(r, c, row)
+        const d = Math.hypot(p.x - x, p.y - y)
+        if (d < BP_CELL * 0.97 && d < hitDist) { hit = { r, c }; hitDist = d }
+      }
+    }
+    if (hit) {
+      let best: { r: number; c: number } | null = null, bestD = Infinity
+      for (const [nr, nc] of neighbors(grid, hit.r, hit.c)) {
+        if (grid[nr].cells[nc]) continue
+        const p = cellPos(nr, nc, grid[nr])
+        const d = Math.hypot(p.x - x, p.y - y)
+        if (d < bestD) { bestD = d; best = { r: nr, c: nc } }
+      }
+      return best
+    }
+    if (y <= TOP_PAD && grid[0]) {
+      const c = Math.max(0, Math.min(grid[0].cells.length - 1, colAt(x, grid[0].wide)))
+      if (!grid[0].cells[c]) return { r: 0, c }
+    }
+    return null
+  }
+
+  // Simulates the shot's bounced path to predict where it will land (easy mode aim helper).
+  function simulatePreview(grid: BPRow[], dx: number, dy: number): { points: { x: number; y: number }[]; landingPos: { x: number; y: number } | null } {
+    let x = SX, y = SY, vx = dx, vy = dy
+    const STEP = BP_CELL * 0.3
+    const points: { x: number; y: number }[] = [{ x, y }]
+    for (let i = 0; i < 3000; i++) {
+      x += vx * STEP; y += vy * STEP
+      if (x < BP_R) { x = BP_R; vx = -vx; points.push({ x, y }) }
+      else if (x > VW - BP_R) { x = VW - BP_R; vx = -vx; points.push({ x, y }) }
+      const landing = findLanding(grid, x, y)
+      if (landing) {
+        const p = cellPos(landing.r, landing.c, grid[landing.r])
+        // Stop the drawn line at the landing ring's edge, not its center.
+        points.push({ x: p.x - vx * BP_LANDING_R, y: p.y - vy * BP_LANDING_R })
+        return { points, landingPos: p }
+      }
+      if (y < -BP_CELL) { points.push({ x, y }); return { points, landingPos: null } }
+    }
+    return { points, landingPos: null }
+  }
+
+  function BubblePopPage() {
+    const active   = useContext(PageActiveCtx)
+    const [, tick] = useState(0)
+    const svgRef   = useRef<SVGSVGElement>(null)
+    const lineRef  = useRef<SVGLineElement>(null)
+    const pathRef  = useRef<SVGPolylineElement>(null)
+    const landingDotRef = useRef<SVGCircleElement>(null)
+
+    const gridRef    = useRef<BPRow[]>(freshGrid())
+    const curRef      = useRef(pickColor(gridRef.current))
+    const nextRef     = useRef(pickColor(gridRef.current))
+    const flyRef      = useRef<{ x: number; y: number; vx: number; vy: number; c: number } | null>(null)
+    const burstsRef   = useRef<BPBurst[]>([])
+    const fallingRef  = useRef<BPFall[]>([])
+    const fxIdRef     = useRef(0)
+    const growElapsedRef = useRef(0)
+    const stateRef    = useRef<'idle' | 'flying' | 'won' | 'lost'>('idle')
+    const wonRef       = useRef(false)
+    const lastTRef     = useRef(0)
+    const rafRef       = useRef<number>()
+
+    const reset = useCallback(() => {
+      gridRef.current        = freshGrid()
+      curRef.current         = pickColor(gridRef.current)
+      nextRef.current        = pickColor(gridRef.current)
+      flyRef.current         = null
+      burstsRef.current      = []
+      fallingRef.current     = []
+      growElapsedRef.current = 0
+      stateRef.current       = 'idle'
+      lastTRef.current       = 0
+      tick(n => n + 1)
+    }, [])
+
+    useEffect(() => {
+      if (!active) return
+      const onKey = (e: KeyboardEvent) => {
+        if (e.code === 'Space' && stateRef.current === 'lost') { e.preventDefault(); reset() }
+      }
+      window.addEventListener('keydown', onKey)
+      return () => window.removeEventListener('keydown', onKey)
+    }, [active, reset])
+
+    useEffect(() => {
+      if (!active) return
+      let alive = true
+      const loop = (ts: number) => {
+        if (!alive) return
+        const dt = lastTRef.current ? Math.min(ts - lastTRef.current, 40) : 16
+        lastTRef.current = ts
+        let fxChanged = false
+        if (burstsRef.current.length) {
+          burstsRef.current = burstsRef.current.filter(b => ts - b.t0 < BP_BURST_MS)
+          fxChanged = true
+        }
+        if (fallingRef.current.length) {
+          for (const f of fallingRef.current) { f.vy += BP_FALL_G * dt; f.x += f.vx * dt; f.y += f.vy * dt }
+          fallingRef.current = fallingRef.current.filter(f => f.y < VH + BP_CELL * 2)
+          fxChanged = true
+        }
+        if (growMs && stateRef.current !== 'won' && stateRef.current !== 'lost') {
+          growElapsedRef.current += dt
+          if (growElapsedRef.current >= growMs) {
+            growElapsedRef.current -= growMs
+            growTopRow(gridRef.current)
+            fxChanged = true
+            const lowestY = lowestOccupiedY(gridRef.current)
+            if (lowestY !== null && lowestY >= SY - BP_CELL * 1.4) {
+              stateRef.current = 'lost'
+              flyRef.current = null
+              bpSfxLose()
+            }
+          }
+        }
+        if (fxChanged) tick(n => n + 1)
+        if (stateRef.current === 'flying' && flyRef.current) {
+          const fly = flyRef.current
+          const grid = gridRef.current
+          fly.x += fly.vx * dt; fly.y += fly.vy * dt
+          if (fly.x < BP_R) { fly.x = BP_R; fly.vx = -fly.vx }
+          else if (fly.x > VW - BP_R) { fly.x = VW - BP_R; fly.vx = -fly.vx }
+
+          const landing = findLanding(grid, fly.x, fly.y)
+
+          if (landing) {
+            grid[landing.r].cells[landing.c] = { c: fly.c }
+            const group = sameColorGroup(grid, landing.r, landing.c)
+            if (group.length >= 3) {
+              bpSfxBurst()
+              for (const [r, c] of group) {
+                const p = cellPos(r, c, grid[r])
+                burstsRef.current.push({ id: fxIdRef.current++, x: p.x, y: p.y, col: grid[r].cells[c]!.c, t0: ts })
+                grid[r].cells[c] = null
+              }
+              const floating = findFloating(grid)
+              if (floating.length) bpSfxFall()
+              for (const [r, c] of floating) {
+                const p = cellPos(r, c, grid[r])
+                fallingRef.current.push({ id: fxIdRef.current++, x: p.x, y: p.y, vx: (Math.random() - 0.5) * 0.15, vy: 0, col: grid[r].cells[c]!.c, t0: ts })
+                grid[r].cells[c] = null
+              }
+            }
+            flyRef.current = null
+            if (isCleared(grid)) {
+              stateRef.current = 'won'; wonRef.current = true
+            } else {
+              stateRef.current = 'idle'
+              curRef.current = nextRef.current
+              nextRef.current = pickColor(grid)
+            }
+            tick(n => n + 1)
+          } else if (fly.y < -BP_CELL) {
+            // missed everything (shouldn't normally happen) — discard and re-serve
+            flyRef.current = null
+            stateRef.current = 'idle'
+            tick(n => n + 1)
+          } else {
+            tick(n => n + 1)
+          }
+        }
+        rafRef.current = requestAnimationFrame(loop)
+      }
+      rafRef.current = requestAnimationFrame(loop)
+      return () => { alive = false; if (rafRef.current) cancelAnimationFrame(rafRef.current) }
+    }, [active]) // eslint-disable-line react-hooks/exhaustive-deps
+
+    function toSvg(cx: number, cy: number): { x: number; y: number } | null {
+      const svg = svgRef.current; if (!svg) return null
+      const rect = svg.getBoundingClientRect()
+      if (rect.width === 0 || rect.height === 0) return null
+      return { x: (cx - rect.left) * (VW / rect.width), y: (cy - rect.top) * (VH / rect.height) }
+    }
+
+    const updateAim = (tx: number, ty: number) => {
+      const { dx, dy } = aimDir(SX, SY, tx, ty)
+      if (predictLanding) {
+        const { points, landingPos } = simulatePreview(gridRef.current, dx, dy)
+        if (pathRef.current) pathRef.current.setAttribute('points', points.map(p => `${p.x},${p.y}`).join(' '))
+        if (landingDotRef.current) {
+          const pos = landingPos ?? points[points.length - 1]
+          landingDotRef.current.setAttribute('cx', String(pos.x))
+          landingDotRef.current.setAttribute('cy', String(pos.y))
+          landingDotRef.current.setAttribute('opacity', landingPos ? '1' : '0')
+        }
+      } else if (lineRef.current) {
+        lineRef.current.setAttribute('x2', String(SX + dx * AIM_LEN))
+        lineRef.current.setAttribute('y2', String(SY + dy * AIM_LEN))
+      }
+    }
+
+    const onPointerMove = (e: React.PointerEvent) => {
+      if (stateRef.current !== 'idle') return
+      const p = toSvg(e.clientX, e.clientY); if (!p) return
+      updateAim(p.x, p.y)
+    }
+    const onClick = (e: React.MouseEvent) => {
+      if (stateRef.current === 'lost') { reset(); return }
+      if (stateRef.current !== 'idle') return
+      const p = toSvg(e.clientX, e.clientY); if (!p) return
+      const { dx, dy } = aimDir(SX, SY, p.x, p.y)
+      flyRef.current = { x: SX, y: SY, vx: dx * BP_SPEED, vy: dy * BP_SPEED, c: curRef.current }
+      stateRef.current = 'flying'
+      lastTRef.current = 0
+      bpSfxShoot()
+      tick(n => n + 1)
+    }
+
+    const grid = gridRef.current, fly = flyRef.current, state = stateRef.current
+    const bursts = burstsRef.current, falling = fallingRef.current
+    const now = performance.now()
+    const arrowId = `bp-arrow-${cols}`
+
+    return (
+      <>
+        <div style={{ ...ch4CanvasStyle, flex: 1, display: 'flex', alignItems: 'center', justifyContent: 'center', overflow: 'hidden' }}>
+          <div style={{ width: '100%', aspectRatio: `${VW} / ${VH}`, maxHeight: '100%' }}>
+          <svg ref={svgRef} viewBox={`0 0 ${VW} ${VH}`}
+            style={{ width: '100%', height: '100%', display: 'block', touchAction: 'none', userSelect: 'none', cursor: 'crosshair' }}
+            onPointerMove={onPointerMove} onClick={onClick}
+          >
+            <defs>
+              <marker id={arrowId} markerWidth={11} markerHeight={11} refX={8} refY={5.5} orient="auto" viewBox="0 0 11 11">
+                <path d="M1.5,1.5 L8,5.5 L1.5,9.5" fill="none" stroke="#bbb" strokeWidth={2.5} strokeLinecap="round" strokeLinejoin="round" />
+              </marker>
+            </defs>
+
+            {grid.map((row, r) => row.cells.map((cell, c) => {
+              if (!cell) return null
+              const p = cellPos(r, c, row)
+              return <circle key={`${r}-${c}`} cx={p.x} cy={p.y} r={BP_R} fill={BP_PALETTE[cell.c]} stroke="#fff" strokeWidth={2} />
+            }))}
+
+            {fly && <circle cx={fly.x} cy={fly.y} r={BP_R} fill={BP_PALETTE[fly.c]} stroke="#fff" strokeWidth={2} />}
+
+            {falling.map(f => {
+              const age = now - f.t0
+              const opacity = Math.max(0, 1 - age / 900)
+              return <circle key={f.id} cx={f.x} cy={f.y} r={BP_R} fill={BP_PALETTE[f.col]} stroke="#fff" strokeWidth={2} opacity={opacity} />
+            })}
+
+            {bursts.map(b => {
+              const p = Math.min(1, (now - b.t0) / BP_BURST_MS)
+              const opacity = 1 - p
+              return (
+                <g key={b.id} opacity={opacity}>
+                  <circle cx={b.x} cy={b.y} r={BP_R * (1 + p * 0.6)} fill={BP_PALETTE[b.col]} opacity={0.5} />
+                  {Array.from({ length: 6 }, (_, k) => {
+                    const ang = (k / 6) * Math.PI * 2
+                    const dist = p * BP_R * 2.2
+                    return <circle key={k} cx={b.x + Math.cos(ang) * dist} cy={b.y + Math.sin(ang) * dist}
+                      r={Math.max(0, BP_R * 0.28 * (1 - p))} fill={BP_PALETTE[b.col]} />
+                  })}
+                </g>
+              )
+            })}
+
+            {state === 'idle' && !predictLanding && (
+              <line ref={lineRef} x1={SX} y1={SY} x2={SX} y2={SY - AIM_LEN}
+                stroke="#bbb" strokeWidth={2.5} strokeDasharray="6 6" strokeLinecap="round"
+                markerEnd={`url(#${arrowId})`} />
+            )}
+
+            {state === 'idle' && predictLanding && (() => {
+              const initial = simulatePreview(grid, 0, -1)
+              const dotPos = initial.landingPos ?? initial.points[initial.points.length - 1]
+              return (
+                <>
+                  <polyline ref={pathRef} points={initial.points.map(p => `${p.x},${p.y}`).join(' ')}
+                    fill="none" stroke="#ddd" strokeWidth={2} strokeDasharray={BP_AIM_DASH} strokeLinecap="round" />
+                  <circle ref={landingDotRef} cx={dotPos.x} cy={dotPos.y} r={BP_LANDING_R}
+                    fill="none" stroke="#ddd" strokeWidth={2} strokeDasharray={BP_AIM_DASH} opacity={initial.landingPos ? 1 : 0} />
+                </>
+              )
+            })()}
+
+            {state !== 'won' && state !== 'lost' && (
+              <circle cx={SX} cy={SY} r={BP_R + 4} fill="#fff" stroke="#ddd" strokeWidth={2} />
+            )}
+            {state !== 'won' && state !== 'lost' && (
+              <circle cx={SX} cy={SY} r={BP_R} fill={BP_PALETTE[curRef.current]} stroke="#fff" strokeWidth={2} />
+            )}
+            {state !== 'won' && state !== 'lost' && (
+              <circle cx={SX + BP_CELL * 1.6} cy={SY} r={BP_R * 0.6} fill={BP_PALETTE[nextRef.current]} stroke="#fff" strokeWidth={2} opacity={0.85} />
+            )}
+
+            {(state === 'won' || state === 'lost') && (
+              <rect x={0} y={0} width={VW} height={VH} fill="#fff" opacity={0.55} />
+            )}
+            {state === 'won' && (
+              <text x={VW / 2} y={VH / 2} textAnchor="middle" dominantBaseline="middle"
+                fontSize={22} fontWeight={900} fill={RED} fontFamily="inherit">You popped them all! 🎉</text>
+            )}
+            {state === 'lost' && <>
+              <text x={VW / 2} y={VH / 2 - 18} textAnchor="middle" dominantBaseline="middle"
+                fontSize={22} fontWeight={900} fill={RED} fontFamily="inherit">Oh no! 😅</text>
+              <text x={VW / 2} y={VH / 2 + 10} textAnchor="middle" dominantBaseline="middle"
+                fontSize={13} fill={RED} opacity={0.7} fontFamily="inherit">The bubbles got too close!</text>
+              <text x={VW / 2} y={VH / 2 + 30} textAnchor="middle" dominantBaseline="middle"
+                fontSize={12} fill={RED} opacity={0.6} fontFamily="inherit">Tap or press space to try again</text>
+            </>}
+          </svg>
+          </div>
+        </div>
+        <IntroText>Aim and tap to pop 3 or more matching bubbles!</IntroText>
+        <SetDone done={wonRef.current} />
+      </>
+    )
+  }
+  return BubblePopPage
+}
+
+const BubblePopEasy = bpMkPage(8, 5, 3, 35000, true)    // easy mode: very slow growth + landing-spot preview
+const BubblePopHard = bpMkPage(9, 7, 4, 22000, false)   // hard mode: faster growth, no landing preview
 
 // ── Game registry ─────────────────────────────────────────────────────────────
 
@@ -8112,15 +8744,6 @@ const GAMES: GameDef[] = [
     completion: { text: 'Keep exploring!', emojiIcon: '🌿' },
   },
   {
-    id: 'snake',
-    title: 'Snake',
-    emoji: '🐍',
-    group: 'Action',
-    pages: [mkDiffGame(SnakeEasy, SnakeHard)],
-    completion: { text: 'Hissss! 🐍' },
-    hasDifficulty: true,
-  },
-  {
     id: 'red-dot-jump',
     title: 'Dino Jump',
     emoji: '🦖',
@@ -8145,6 +8768,15 @@ const GAMES: GameDef[] = [
     group: 'Action',
     pages: [mkDiffGame(FlappyEasy, FlappyHard)],
     completion: { text: 'Woohoo!' },
+    hasDifficulty: true,
+  },
+  {
+    id: 'snake',
+    title: 'Snake',
+    emoji: '🐍',
+    group: 'Action',
+    pages: [mkDiffGame(SnakeEasy, SnakeHard)],
+    completion: { text: 'Hissss! 🐍' },
     hasDifficulty: true,
   },
   {
@@ -8226,6 +8858,15 @@ const GAMES: GameDef[] = [
     group: 'Puzzles',
     pages: [mkDiffGame(MahjongPage, MahjongL2Page)],
     completion: { text: 'Amazing!', emojiIcon: '🀄' },
+    hasDifficulty: true,
+  },
+  {
+    id: 'bubble-pop',
+    title: 'Bubble Pop',
+    emoji: '🫧',
+    group: 'Puzzles',
+    pages: [mkDiffGame(BubblePopEasy, BubblePopHard)],
+    completion: { text: 'Pop pop pop! 🫧' },
     hasDifficulty: true,
   },
 ]
@@ -8366,7 +9007,7 @@ function GameSwitcherPanel({ show, currentGameId, onSelect, onClose }: {
               }}>
                 {group}
               </div>
-              <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(86px, 1fr))', gap: 8 }}>
+              <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4, 1fr)', gap: 8 }}>
                 {games.map(game => {
                   const active = game.id === currentGameId
                   return (
@@ -8472,6 +9113,11 @@ export default function PressHere() {
     handoffRef.current = { page4Dots: null, page5Dots: null, page6Dots: null, ch2p2Dots: null, ch2LatestDots: null }
   }
 
+  function goToNextGame() {
+    playChapterComplete()
+    startGame(GAMES[(GAMES.indexOf(currentGame) + 1) % GAMES.length].id)
+  }
+
   function showToast(msg: string) {
     if (toastTimerRef.current) clearTimeout(toastTimerRef.current)
     setSwitchToast(msg)
@@ -8515,12 +9161,14 @@ export default function PressHere() {
     function onKey(e: KeyboardEvent) {
       if (e.code !== 'Space' || !done) return
       e.preventDefault()
-      if (isLast) setWellDone(true)
-      else nav(page + 1)
+      if (isLast) {
+        if (currentGame.id === 'intro') setWellDone(true)
+        else goToNextGame()
+      } else nav(page + 1)
     }
     window.addEventListener('keydown', onKey)
     return () => window.removeEventListener('keydown', onKey)
-  }, [done, isLast, page])   // eslint-disable-line react-hooks/exhaustive-deps
+  }, [done, isLast, page, currentGame])   // eslint-disable-line react-hooks/exhaustive-deps
 
   useEffect(() => {
     function onKey(e: KeyboardEvent) {
@@ -8696,7 +9344,11 @@ export default function PressHere() {
                 <span>{caption}</span>
               </div>
               <button
-                onClick={isLast ? () => setWellDone(true) : () => nav(page + 1)}
+                onClick={
+                  isLast
+                    ? (currentGame.id === 'intro' ? () => setWellDone(true) : goToNextGame)
+                    : () => nav(page + 1)
+                }
                 style={{
                   position: 'absolute', right: 0,
                   display: 'flex', alignItems: 'center', gap: isMobile ? 4 : 8,
@@ -8711,7 +9363,9 @@ export default function PressHere() {
                 onMouseDown={e => (e.currentTarget.style.transform = 'scale(0.96)')}
                 onMouseUp={e => (e.currentTarget.style.transform = 'scale(1)')}
               >
-                {isLast ? 'Done' : <>Next <ChevronRight size={isMobile ? 17 : 22} strokeWidth={3} /></>}
+                {isLast && currentGame.id === 'intro'
+                  ? 'Done'
+                  : <>Next <ChevronRight size={isMobile ? 17 : 22} strokeWidth={3} /></>}
               </button>
             </div>
 
