@@ -3,7 +3,7 @@ import PressHere from './pages/PressHere'
 
 export default function App() {
   return (
-    <BrowserRouter basename="/press-here">
+    <BrowserRouter>
       <Routes>
         <Route path="/*" element={<PressHere />} />
       </Routes>

@@ -8611,7 +8611,7 @@ export default function PressHere() {
     const m = window.location.pathname.match(/\/game\/([^/]+)/)
     const id = m?.[1] ?? 'intro'
     const valid = GAMES.find(g => g.id === id) ? id : 'intro'
-    window.history.replaceState(null, '', `/press-here/game/${valid}`)
+    window.history.replaceState(null, '', `/game/${valid}`)
     return valid
   })
   const [showPanel,    setShowPanel]  = useState(false)
@@ -8625,7 +8625,7 @@ export default function PressHere() {
   const currentGame = GAMES.find(g => g.id === gameId) ?? GAMES[0]
 
   useEffect(() => {
-    window.history.replaceState(null, '', `/press-here/game/${gameId}`)
+    window.history.replaceState(null, '', `/game/${gameId}`)
   }, [gameId])
 
   useEffect(() => {

@@ -4,7 +4,7 @@ import react from '@vitejs/plugin-react'
 import tailwindcss from '@tailwindcss/vite'
 
 export default defineConfig({
-  base: '/press-here/',
+  base: '/',
   resolve: {
     alias: {
       '@': path.resolve(__dirname, './src'),
