@@ -3,10 +3,7 @@ import React, { useState, useRef, useEffect, useLayoutEffect, createContext, use
 const completionGifs = Object.values(import.meta.glob('../completion/*.gif', { eager: true, query: '?url', import: 'default' })) as string[]
 function randomCompletionGif() { return completionGifs[Math.floor(Math.random() * completionGifs.length)] }
 import '@fontsource-variable/nunito'
-import { ChevronRight, ChevronLeft, RotateCcw, X as LucideX, Circle as LucideCircle, Volume2 } from 'lucide-react'
-import { Button } from '@/components/ui/button'
-import { Pagination, PaginationContent, PaginationItem, PaginationLink, PaginationNext, PaginationPrevious } from '@/components/ui/pagination'
-import { cn } from '@/lib/utils'
+import { ChevronRight, RotateCcw, X as LucideX, Circle as LucideCircle, Volume2 } from 'lucide-react'
 import mj1 from '../mahjong/mahjong-1.svg'
 import mj2 from '../mahjong/mahjong-2.svg'
 import mj3 from '../mahjong/mahjong-3.svg'
@@ -95,8 +92,9 @@ type ShapeDef = { vertices: [number,number][]; open: boolean; emoji: string; lab
 const Ch2ShapesCtx = createContext<ShapeDef[]>([])
 
 function playPageComplete() {
+  const ctx = getSfxCtx(); if (!ctx) return
+  if (ctx.state === 'suspended') { ctx.resume().then(playPageComplete).catch(() => {}); return }
   try {
-    const ctx  = new AudioContext()
     const notes: [number, number][] = [[523.25, 0], [659.25, 0.13], [783.99, 0.26]]
     notes.forEach(([freq, delay]) => {
       const osc = ctx.createOscillator(); const gain = ctx.createGain()
@@ -112,8 +110,9 @@ function playPageComplete() {
 }
 
 function playChapterComplete() {
+  const ctx = getSfxCtx(); if (!ctx) return
+  if (ctx.state === 'suspended') { ctx.resume().then(playChapterComplete).catch(() => {}); return }
   try {
-    const ctx = new AudioContext()
     const notes: [number, number, number][] = [
       [392.00, 0.00, 0.15],
       [523.25, 0.15, 0.15],
@@ -1378,7 +1377,7 @@ function GhostBtn({ onClick, children }: { onClick: () => void; children: React.
   return (
     <button
       onClick={onClick}
-      style={{ display: 'flex', alignItems: 'center', gap: 8, padding: '12px 30px', borderRadius: 40, background: 'transparent', border: '2px solid #ccc', fontSize: 17, fontWeight: 700, color: '#888', fontFamily: 'inherit', cursor: 'pointer' }}
+      style={{ display: 'flex', alignItems: 'center', gap: 8, padding: '12px 30px', borderRadius: 10, background: 'transparent', border: '2px solid #ccc', fontSize: 17, fontWeight: 700, color: '#888', fontFamily: 'inherit', cursor: 'pointer' }}
       onMouseEnter={e => { e.currentTarget.style.borderColor = '#aaa'; e.currentTarget.style.color = '#555' }}
       onMouseLeave={e => { e.currentTarget.style.borderColor = '#ccc'; e.currentTarget.style.color = '#888' }}
       onMouseDown={e => (e.currentTarget.style.transform = 'scale(0.96)')}
@@ -1391,7 +1390,7 @@ function PrimaryBtn({ onClick, children }: { onClick: () => void; children: Reac
   return (
     <button
       onClick={onClick}
-      style={{ display: 'flex', alignItems: 'center', gap: 8, padding: '12px 30px', borderRadius: 40, background: '#FDD302', border: 'none', fontSize: 17, fontWeight: 800, color: '#333', fontFamily: 'inherit', cursor: 'pointer' }}
+      style={{ display: 'flex', alignItems: 'center', gap: 8, padding: '12px 30px', borderRadius: 10, background: '#FDD302', border: 'none', fontSize: 17, fontWeight: 800, color: '#333', fontFamily: 'inherit', cursor: 'pointer' }}
       onMouseEnter={e => (e.currentTarget.style.background = '#ffc700')}
       onMouseLeave={e => (e.currentTarget.style.background = '#FDD302')}
       onMouseDown={e => (e.currentTarget.style.transform = 'scale(0.96)')}
@@ -2161,7 +2160,7 @@ function ReplayIconBtn({ onClick, style }: { onClick: () => void; style?: React.
       onClick={e => { e.stopPropagation(); onClick() }}
       title="Restart"
       style={{
-        width: 34, height: 34, borderRadius: '50%',
+        width: 34, height: 34, borderRadius: 9,
         border: '1.5px solid #d0ccc5', background: '#fff',
         cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center',
         flexShrink: 0,
@@ -2200,15 +2199,14 @@ const CH3_SPD0     = 0.40    // %/frame initial obstacle speed
 const CH3_ACCEL    = 0.00005
 const CH3_MAX_SPD  = 0.90
 const CH3_WIN      = 1       // mountains to jump — level 1
-const CH3_WIN2     = 10      // mountains to jump — level 2
-const CH3_WIN3     = 15      // mountains to jump — level 3 (hard)
 const CH3_PX       = 50      // player x position (% from left — horizontal centre)
 const CH3_OBS_W    = 60      // all obstacles same width px
 const CH3_OBS_H    = 80      // all obstacles same height px
 
 function sfxJump() {
+  const ctx = getSfxCtx(); if (!ctx) return
+  if (ctx.state === 'suspended') { ctx.resume().then(sfxJump).catch(() => {}); return }
   try {
-    const ctx = new (window.AudioContext || (window as any).webkitAudioContext)()
     const now = ctx.currentTime
     const osc = ctx.createOscillator(); const g = ctx.createGain()
     osc.type = 'sine'
@@ -2364,6 +2362,7 @@ function Ch3Page1({ winTarget = CH3_WIN, variant = 'normal' }: { winTarget?: num
   }, [active])  // eslint-disable-line react-hooks/exhaustive-deps
 
   function handleAction() {
+    sfxUnlock()
     if (wonRef.current) return
     if (deadRef.current) { handleRestart(); return }
     runRef.current = true
@@ -2518,8 +2517,6 @@ const C3P2_SPD        = 6.0      // horizontal speed px/frame
 const C3P2_FLOOR_H    = 10       // platform height px (thin pill)
 const C3P2_SPACING    = 150      // world px between floor rows
 const C3P2_WIN        = 5        // levels to descend — level 1
-const C3P2_WIN2       = 20       // levels to descend — level 2
-const C3P2_WIN3       = 30       // levels to descend — level 3 (hard)
 const C3P2_CTR_SHIFT  = 140      // max platform-centre shift between consecutive rows
 const C3P2_SCROLL     = 0.60     // world px/frame the camera drifts upward (uniform)
 const C3P2_GAP_W      = 90       // gap between clouds when 2 per row (px)
@@ -2825,6 +2822,28 @@ function Ch3Page2({ winTarget = C3P2_WIN, variant = 'normal' }: { winTarget?: nu
         onPointerLeave={handlePointerLeave}
         style={{ ...canvasStyle, cursor: won ? 'default' : 'pointer', overflow: 'hidden', touchAction: 'none' }}
       >
+        {/* Easy mode: subtle persistent left/right tap-zone highlights */}
+        {variant !== 'hard' && (
+          <>
+            <div style={{
+              position: 'absolute', left: 12, top: 12, bottom: 12, width: 72,
+              borderRadius: 14, background: 'rgba(255,209,2,0.10)',
+              display: 'flex', alignItems: 'center', justifyContent: 'center',
+              pointerEvents: 'none', zIndex: 1,
+            }}>
+              <span style={{ fontSize: 18, color: '#9a7d00', opacity: 0.6 }}>←</span>
+            </div>
+            <div style={{
+              position: 'absolute', right: 12, top: 12, bottom: 12, width: 72,
+              borderRadius: 14, background: 'rgba(255,209,2,0.10)',
+              display: 'flex', alignItems: 'center', justifyContent: 'center',
+              pointerEvents: 'none', zIndex: 1,
+            }}>
+              <span style={{ fontSize: 18, color: '#9a7d00', opacity: 0.6 }}>→</span>
+            </div>
+          </>
+        )}
+
         {/* Thin pill platforms — worldY is the top edge */}
         {visibleFloors.flatMap(floor => {
           const screenY = floor.worldY - camY
@@ -2864,26 +2883,6 @@ function Ch3Page2({ winTarget = C3P2_WIN, variant = 'normal' }: { winTarget?: nu
           }}>
             {winTarget === Infinity ? cleared : `${cleared} / ${winTarget}`}
           </div>
-        )}
-
-        {/* Left/right tap zone hints — always visible until started */}
-        {!started && !dead && !won && (
-          <>
-            <div style={{
-              position: 'absolute', left: 0, top: 0, bottom: 0, width: '50%',
-              display: 'flex', alignItems: 'flex-end', justifyContent: 'center',
-              paddingBottom: 20, pointerEvents: 'none',
-            }}>
-              <span style={{ fontSize: 28, opacity: 0.18 }}>←</span>
-            </div>
-            <div style={{
-              position: 'absolute', right: 0, top: 0, bottom: 0, width: '50%',
-              display: 'flex', alignItems: 'flex-end', justifyContent: 'center',
-              paddingBottom: 20, pointerEvents: 'none',
-            }}>
-              <span style={{ fontSize: 28, opacity: 0.18 }}>→</span>
-            </div>
-          </>
         )}
 
         {/* Start hint */}
@@ -2946,8 +2945,6 @@ const C3P3_DRIFT     = 16      // max Y shift between consecutive segments
 const C3P3_MIN_GAP   = 185     // minimum tunnel opening height px
 const C3P3_DOT_X_F   = 0.18   // dot fixed X fraction
 const C3P3_WIN_DIST  = 10 * 60  // frames survived — level 1  (10 s)
-const C3P3_WIN_DIST2 = 25 * 60  // frames survived — level 2  (25 s)
-const C3P3_WIN_DIST3 = 45 * 60  // frames survived — level 3  (45 s, hard)
 
 /** Simple LCG seeded RNG — use a fixed seed in initGame so terrain is identical every run. */
 function makeLCG(seed: number): () => number {
@@ -3320,26 +3317,6 @@ function TurnIndicator({ current, gameOver, mode, P_COLOR, isLandscape, scores, 
   )
 }
 
-function ModeSelector({ mode, onReset }: { mode: TTTMode; onReset: (m: TTTMode) => void }) {
-  return (
-    <div style={{ display: 'flex', border: '1.5px solid #e8e8e8', borderRadius: 30, overflow: 'hidden' }}>
-      {(['computer', 'two-player'] as const).map(m => (
-        <button key={m} onClick={() => onReset(m)} style={{
-          padding: '5px 16px',
-          background: mode === m ? '#ddd' : 'transparent',
-          color: mode === m ? '#555' : '#bbb',
-          border: 'none', fontSize: 12, fontWeight: mode === m ? 700 : 400,
-          cursor: mode === m ? 'default' : 'pointer',
-          fontFamily: 'inherit',
-          transition: 'background 0.15s, color 0.15s',
-        }}>
-          {m === 'computer' ? 'vs Computer' : 'Multi Players'}
-        </button>
-      ))}
-    </div>
-  )
-}
-
 function PlayerCountControl({ count, onChange, isLandscape }: { count: number; onChange: (n: 2 | 3) => void; isLandscape: boolean }) {
   const is3 = count >= 3
   return (
@@ -3347,7 +3324,7 @@ function PlayerCountControl({ count, onChange, isLandscape }: { count: number; o
       <button
         onClick={() => onChange(is3 ? 2 : 3)}
         style={{
-          width: 32, height: 32, borderRadius: '50%',
+          width: 32, height: 32, borderRadius: 9,
           border: '2px solid #ccc',
           background: 'transparent', color: '#bbb',
           fontSize: 22, fontWeight: 300,
@@ -3452,7 +3429,7 @@ function Ch4RulesModal({ title, onClose, children }: {
           {children}
         </div>
         <button onClick={onClose} style={{
-          marginTop: 22, padding: '8px 24px', borderRadius: 30,
+          marginTop: 22, padding: '8px 24px', borderRadius: 10,
           background: '#222', border: 'none', color: '#fff',
           fontSize: 14, fontWeight: 700, cursor: 'pointer', fontFamily: 'inherit',
         }}>Got it!</button>
@@ -3501,7 +3478,7 @@ function SpeakButton({ text }: { text: string }) {
       onClick={speak}
       title="Read aloud"
       style={{
-        width: 34, height: 34, borderRadius: '50%',
+        width: 34, height: 34, borderRadius: 9,
         border: '1.5px solid #d0ccc5', background: '#fff',
         cursor: 'pointer', display: 'inline-flex', alignItems: 'center', justifyContent: 'center',
         flexShrink: 0,
@@ -4354,12 +4331,6 @@ function DotsAndBoxesPage() {
 }
 
 const CHAPTER1_PAGES = [Page1, Page23, Page4, Page56, Page7, Page8, Page9, Page10, Page11]
-function Ch3Page1L2() { return <Ch3Page1 winTarget={CH3_WIN2} /> }
-function Ch3Page2L2() { return <Ch3Page2 winTarget={C3P2_WIN2} /> }
-function Ch3Page3L2() { return <Ch3Page3 winTarget={C3P3_WIN_DIST2} /> }
-function Ch3Page1L3() { return <Ch3Page1 winTarget={CH3_WIN3} variant="hard" /> }
-function Ch3Page2L3() { return <Ch3Page2 winTarget={C3P2_WIN3} variant="hard" /> }
-function Ch3Page3L3() { return <Ch3Page3 winTarget={C3P3_WIN_DIST3} variant="hard" /> }
 
 // Easy/Hard difficulty variants (infinite — no win target)
 function DinoEasy()   { return <Ch3Page1 winTarget={Infinity} /> }
@@ -5923,13 +5894,6 @@ const CS_VB6   = 2 * CS_PAD + 6 * CS_CELL  // p3 viewBox size (328) — dot-size
 const CS4_COLORS = [BLUE, RED, YELLOW, '#50C878']                            // 4 colors (pages 1 & 2)
 const CS6_COLORS = [BLUE, RED, YELLOW, '#50C878', '#AF7AC5', '#FF8C42']      // 6 colors (page 3)
 
-// Colors: CS4_COLORS = [BLUE(0), RED(1), YELLOW(2), GREEN(3)]
-// Box A: blue(0,0), [empty→RED](0,1), YELLOW(1,0), GREEN(1,1)
-// Box B: blue(0,0), RED(0,1), [empty→YELLOW](1,0), GREEN(1,1)
-const CS1_GIVEN_A: (number | null)[][] = [[0, null], [2, 3]]
-const CS1_GIVEN_B: (number | null)[][] = [[0, 1],    [null, 3]]
-const CS1_BOX_GAP = 16                                      // gap between the two 2×2 boxes (SVG units)
-const CS1_BOX_VB  = 2 * CS_CELL + 2 * CS_PAD               // compact viewBox per box: 136 SVG units
 
 // Solution: every row, col, and 2×2 box has each of 0-3 exactly once.
 const CS4_SOL: number[][] = [
@@ -6433,402 +6397,6 @@ const CS6_CFG: CSCfg = {
   caption: <><b>Color Sudoku:</b> Every row, column, and box needs one of each color!</>,
 }
 
-function CS1Page() {
-  const isLandscape = useIsLandscape()
-  const colors = CS4_COLORS
-  // Display tray in order: RED(1), YELLOW(2), GREEN(3), BLUE(0)
-  const trayOrder = [1, 2, 3, 0]
-
-  const [boardA, setBoardA] = useState<(number | null)[][]>(() => CS1_GIVEN_A.map(r => [...r]))
-  const [boardB, setBoardB] = useState<(number | null)[][]>(() => CS1_GIVEN_B.map(r => [...r]))
-
-  const resetBoards = () => {
-    setBoardA(CS1_GIVEN_A.map(r => [...r]))
-    setBoardB(CS1_GIVEN_B.map(r => [...r]))
-  }
-
-  // Drag-from-palette state
-  const [dragColorIdx, setDragColorIdx] = useState<number | null>(null)
-  const [dragPt,       setDragPt]       = useState<{ x: number; y: number } | null>(null)
-  const [hoverCell,    setHoverCell]    = useState<{ box: 'A' | 'B'; r: number; c: number } | null>(null)
-  const [errorFlash,   setErrorFlash]   = useState<{ x: number; y: number; id: number } | null>(null)
-  const [flyDot,       setFlyDot]       = useState<{
-    colorIdx: number; id: number;
-    fromX: number; fromY: number; toX: number; toY: number;
-    box: 'A' | 'B'; r: number; c: number;
-  } | null>(null)
-
-  const svgRef       = useRef<SVGSVGElement>(null)
-  const boardDivRef  = useRef<HTMLDivElement>(null)
-  const canvasDivRef = useRef<HTMLDivElement>(null)
-  const [boardDivW, setBoardDivW] = useState(0)
-  const [boardDivH, setBoardDivH] = useState(0)
-  const [canvasW,   setCanvasW]   = useState(0)
-  const [canvasH,   setCanvasH]   = useState(0)
-
-  useEffect(() => {
-    const el = boardDivRef.current; if (!el) return
-    const ro = new ResizeObserver(([e]) => {
-      setBoardDivW(e.contentRect.width)
-      setBoardDivH(e.contentRect.height)
-    })
-    ro.observe(el); return () => ro.disconnect()
-  }, [])
-
-  useEffect(() => {
-    const el = canvasDivRef.current; if (!el) return
-    const ro = new ResizeObserver(([e]) => {
-      setCanvasW(e.contentRect.width)
-      setCanvasH(e.contentRect.height)
-    })
-    ro.observe(el); return () => ro.disconnect()
-  }, [])
-
-  // SVG viewBox dimensions depend on orientation
-  // Portrait:  CS1_BOX_VB wide × (2*CS1_BOX_VB + CS1_BOX_GAP) tall — boxes stacked vertically
-  // Landscape: (2*CS1_BOX_VB + CS1_BOX_GAP) wide × CS1_BOX_VB tall — boxes side by side
-  const VW = isLandscape ? (2 * CS1_BOX_VB + CS1_BOX_GAP) : CS1_BOX_VB
-  const VH = isLandscape ? CS1_BOX_VB : (2 * CS1_BOX_VB + CS1_BOX_GAP)
-
-  // Box B offset in SVG coords
-  const B_OX = isLandscape ? CS1_BOX_VB + CS1_BOX_GAP : 0
-  const B_OY = isLandscape ? 0 : CS1_BOX_VB + CS1_BOX_GAP
-
-  // In portrait the board is width-constrained; in landscape height-constrained
-  const boardPx = isLandscape ? boardDivH : boardDivW
-  // Canvas reference: same dimension used by ColorSudokuPage's boardSqRef
-  // (canvas fills viewport width in portrait, height in landscape)
-  const canvasRefPx = isLandscape ? canvasH : canvasW
-  // TRAY_PD: same formula as P2/P3 — gives identical dot size across all ch5 pages
-  const TRAY_PD = canvasRefPx > 0
-    ? Math.max(20, Math.round(2 * CS_DOT_R * canvasRefPx / CS_VB6))
-    : 36
-  // cs1DotR: SVG radius so board dot physical size = TRAY_PD
-  // physical_dot = 2 * cs1DotR * (boardPx / CS1_BOX_VB) = TRAY_PD
-  const cs1DotR = (boardPx > 0 && canvasRefPx > 0)
-    ? CS_DOT_R * canvasRefPx * CS1_BOX_VB / (CS_VB6 * boardPx)
-    : CS_DOT_R * CS1_BOX_VB / CS_VB6
-  const trayPad = 10; const trayGap = 10; const trayMargin = 8
-  const trayFontSize = Math.round(TRAY_PD * 0.40)
-
-  // Each color appears once per box × 2 boxes = 2 total needed
-  const remaining = colors.map((_, i) =>
-    2 - boardA.flat().filter(v => v === i).length - boardB.flat().filter(v => v === i).length
-  )
-  const boxSolved = (b: (number | null)[][]) => { const v = b.flat().filter(x => x !== null); return v.length === 4 && new Set(v).size === 4 }
-  const bothSolved = boxSolved(boardA) && boxSolved(boardB)
-
-  // Convert client coords → SVG viewBox coords
-  function toSvgXY(cx: number, cy: number) {
-    const svg = svgRef.current; if (!svg) return null
-    const rect = svg.getBoundingClientRect()
-    if (!rect.width || !rect.height) return null
-    return { x: (cx - rect.left) * (VW / rect.width), y: (cy - rect.top) * (VH / rect.height) }
-  }
-
-  function hitCell(svgX: number, svgY: number): { box: 'A' | 'B'; r: number; c: number; empty: boolean } | null {
-    const boxes: ['A' | 'B', number, number][] = [['A', 0, 0], ['B', B_OX, B_OY]]
-    for (const [box, ox, oy] of boxes) {
-      const lx = svgX - ox - CS_PAD
-      const ly = svgY - oy - CS_PAD
-      const c = Math.floor(lx / CS_CELL)
-      const r = Math.floor(ly / CS_CELL)
-      if (r >= 0 && r < 2 && c >= 0 && c < 2) {
-        const board = box === 'A' ? boardA : boardB
-        const given = box === 'A' ? CS1_GIVEN_A : CS1_GIVEN_B
-        return { box, r, c, empty: board[r][c] === null && given[r][c] === null }
-      }
-    }
-    return null
-  }
-
-  useEffect(() => {
-    if (dragColorIdx === null) return
-    const onMove = (e: PointerEvent) => {
-      setDragPt({ x: e.clientX, y: e.clientY })
-      const sc = toSvgXY(e.clientX, e.clientY)
-      const hit = sc ? hitCell(sc.x, sc.y) : null
-      setHoverCell(hit?.empty ? { box: hit.box, r: hit.r, c: hit.c } : null)
-    }
-    const onUp = (e: PointerEvent) => {
-      const sc = toSvgXY(e.clientX, e.clientY)
-      const hit = sc ? hitCell(sc.x, sc.y) : null
-      if (hit?.empty) {
-        if (hit.box === 'A') { setBoardA(prev => { const n = prev.map(r => [...r]); n[hit.r][hit.c] = dragColorIdx; return n }) }
-        else                 { setBoardB(prev => { const n = prev.map(r => [...r]); n[hit.r][hit.c] = dragColorIdx; return n }) }
-        const el = boardDivRef.current
-        if (el) {
-          const rect = el.getBoundingClientRect()
-          const ox = hit.box === 'A' ? 0 : B_OX
-          const oy = hit.box === 'A' ? 0 : B_OY
-          const cellCxSvg = ox + CS_PAD + hit.c * CS_CELL + CS_CELL / 2
-          const cellCySvg = oy + CS_PAD + hit.r * CS_CELL + CS_CELL / 2
-          const toX = rect.left + cellCxSvg * (rect.width  / VW)
-          const toY = rect.top  + cellCySvg * (rect.height / VH)
-          setFlyDot(prev => ({
-            colorIdx: dragColorIdx!, id: (prev?.id ?? 0) + 1,
-            fromX: e.clientX, fromY: e.clientY, toX, toY,
-            box: hit.box, r: hit.r, c: hit.c,
-          }))
-        }
-      } else {
-        setErrorFlash(prev => ({ x: e.clientX, y: e.clientY, id: (prev?.id ?? 0) + 1 }))
-      }
-      setDragColorIdx(null); setDragPt(null); setHoverCell(null)
-    }
-    window.addEventListener('pointermove', onMove)
-    window.addEventListener('pointerup', onUp)
-    return () => { window.removeEventListener('pointermove', onMove); window.removeEventListener('pointerup', onUp) }
-  }, [dragColorIdx, boardA, boardB, isLandscape]) // eslint-disable-line react-hooks/exhaustive-deps
-
-  // Must be computed before svgBoard (referenced inside its JSX)
-  const cs1DupVals = (bd: (number | null)[][]) => {
-    const flat = bd.flat().filter((v): v is number => v !== null)
-    return new Set(flat.filter((v, i) => flat.indexOf(v) !== i))
-  }
-  const dupValsA = cs1DupVals(boardA)
-  const dupValsB = cs1DupVals(boardB)
-
-  const svgBoard = (
-    <svg ref={svgRef} viewBox={`0 0 ${VW} ${VH}`}
-      style={{ width: '100%', height: '100%', display: 'block', touchAction: 'none' }}
-    >
-      {(['A', 'B'] as const).map(box => {
-        const ox = box === 'A' ? 0 : B_OX
-        const oy = box === 'A' ? 0 : B_OY
-        const board = box === 'A' ? boardA : boardB
-        const given = box === 'A' ? CS1_GIVEN_A : CS1_GIVEN_B
-        const gx = ox + CS_PAD   // grid origin x
-        const gy = oy + CS_PAD   // grid origin y
-        const sz = 2 * CS_CELL
-        return (
-          <g key={box}>
-            {/* Pink conflict highlight for this box */}
-            {(box === 'A' ? dupValsA : dupValsB).size > 0 && (
-              <rect x={gx} y={gy} width={sz} height={sz} fill="rgba(255,182,193,0.40)" />
-            )}
-            {/* Grid lines — box border (thick) vs inner cell divider (thin), matching P2/P3 */}
-            {[0, 1, 2].map(i => (
-              <line key={`h${i}`} x1={gx} y1={gy + i * CS_CELL}
-                x2={gx + sz} y2={gy + i * CS_CELL}
-                stroke={i === 1 ? '#e8e8e8' : '#ccc'}
-                strokeWidth={i === 1 ? 1 : 1.5} />
-            ))}
-            {[0, 1, 2].map(i => (
-              <line key={`v${i}`} x1={gx + i * CS_CELL} y1={gy}
-                x2={gx + i * CS_CELL} y2={gy + sz}
-                stroke={i === 1 ? '#e8e8e8' : '#ccc'}
-                strokeWidth={i === 1 ? 1 : 1.5} />
-            ))}
-            {/* Dots */}
-            {(() => {
-                const dupVals = box === 'A' ? dupValsA : dupValsB
-                return Array.from({ length: 2 }, (_, r) =>
-                  Array.from({ length: 2 }, (_, c) => {
-                    const cx = gx + c * CS_CELL + CS_CELL / 2
-                    const cy = gy + r * CS_CELL + CS_CELL / 2
-                    const val = board[r][c]
-                    const isHover      = hoverCell?.box === box && hoverCell?.r === r && hoverCell?.c === c
-                    const isFlying     = flyDot?.box === box && flyDot?.r === r && flyDot?.c === c
-                    const isConflict   = val !== null && given[r][c] === null && dupVals.has(val)
-                    return (
-                      <g key={`${r}${c}`}>
-                        {isHover && (
-                          <rect x={gx + c * CS_CELL + 2} y={gy + r * CS_CELL + 2}
-                            width={CS_CELL - 4} height={CS_CELL - 4}
-                            fill={`${colors[dragColorIdx!]}30`} rx={5} />
-                        )}
-                        {val !== null && !isFlying ? (
-                          <circle cx={cx} cy={cy} r={cs1DotR} fill={colors[val]}
-                            style={{ filter: isConflict ? 'drop-shadow(0 0 6px rgba(255,80,130,0.95))' : 'none' }} />
-                        ) : isHover ? (
-                          <circle cx={cx} cy={cy} r={cs1DotR} fill={colors[dragColorIdx!]} opacity={0.45} />
-                        ) : null}
-                      </g>
-                    )
-                  })
-                )
-              })()}
-          </g>
-        )
-      })}
-    </svg>
-  )
-
-  const ghostDot = dragColorIdx !== null && dragPt && (
-    <div style={{
-      position: 'fixed', left: dragPt.x - TRAY_PD/2, top: dragPt.y - TRAY_PD/2,
-      width: TRAY_PD, height: TRAY_PD, borderRadius: '50%',
-      background: colors[dragColorIdx], pointerEvents: 'none', opacity: 0.85,
-      border: '2px solid rgba(255,255,255,0.75)', zIndex: 9999,
-    }} />
-  )
-  const errorFlashEl = errorFlash && (
-    <div key={errorFlash.id} style={{
-      position: 'fixed', left: errorFlash.x - TRAY_PD/2, top: errorFlash.y - TRAY_PD/2,
-      width: TRAY_PD, height: TRAY_PD, borderRadius: '50%',
-      pointerEvents: 'none', zIndex: 9999,
-      background: '#e53935', border: '2px solid rgba(255,255,255,0.75)',
-      animation: 'csErrorPop 0.45s ease-out forwards',
-    }} />
-  )
-  const flyDeltaX = flyDot ? flyDot.toX - flyDot.fromX : 0
-  const flyDeltaY = flyDot ? flyDot.toY - flyDot.fromY : 0
-  const flyDotEl = flyDot && (
-    <>
-      <style>{`@keyframes cs1Fly_${flyDot.id} {
-        0%   { transform: translate(0,0); }
-        100% { transform: translate(${flyDeltaX}px,${flyDeltaY}px); }
-      }`}</style>
-      <div key={flyDot.id} style={{
-        position: 'fixed', left: flyDot.fromX - TRAY_PD/2, top: flyDot.fromY - TRAY_PD/2,
-        width: TRAY_PD, height: TRAY_PD, borderRadius: '50%',
-        background: colors[flyDot.colorIdx], border: '2px solid rgba(255,255,255,0.75)',
-        animation: `cs1Fly_${flyDot.id} 0.28s ease-out forwards`,
-        pointerEvents: 'none', zIndex: 9998,
-      }} onAnimationEnd={() => setFlyDot(null)} />
-    </>
-  )
-
-  const trayDot = (colorIdx: number) => {
-    const color = colors[colorIdx]
-    const count = remaining[colorIdx]
-    const isEmpty = count <= 0
-    return (
-      <div key={colorIdx}
-        style={{
-          position: 'relative', flexShrink: 0, touchAction: 'none',
-          cursor: isEmpty ? 'default' : 'grab',
-          width: TRAY_PD, height: TRAY_PD, borderRadius: '50%',
-          background: isEmpty ? 'transparent' : color,
-          border: isEmpty ? `2px solid ${color}` : 'none',
-          opacity: dragColorIdx === colorIdx ? 0.35 : 1,
-          transition: 'opacity 0.12s',
-          display: 'flex', alignItems: 'center', justifyContent: 'center',
-          pointerEvents: isEmpty ? 'none' : undefined,
-        }}
-        onPointerDown={isEmpty ? undefined : e => {
-          e.preventDefault(); setDragColorIdx(colorIdx); setDragPt({ x: e.clientX, y: e.clientY })
-        }}
-      >
-        {!isEmpty && (
-          <span style={{
-            fontSize: trayFontSize, fontWeight: 900, color: '#fff',
-            lineHeight: 1, pointerEvents: 'none', userSelect: 'none',
-            textShadow: '0 1px 2px rgba(0,0,0,0.2)',
-          }}>{count}</span>
-        )}
-      </div>
-    )
-  }
-  const palettePanel = (axis: 'column' | 'row') => {
-    const isCol = axis === 'column'
-    const trayStyle: React.CSSProperties = {
-      background: '#fef9f0', flexShrink: 0, padding: trayPad,
-      display: 'flex', alignItems: 'center', justifyContent: 'center',
-      margin: trayMargin, borderRadius: 16,
-      ...(isCol ? { alignSelf: 'stretch' } : {}),
-    }
-    return (
-      <div style={{ ...trayStyle, flexDirection: axis, gap: trayGap }}>
-        {trayOrder.map(colorIdx => trayDot(colorIdx))}
-      </div>
-    )
-  }
-
-  // All X overlays for conflicting user-placed cells across both boxes
-  const misplacedXOverlays = (() => {
-    if (flyDot) return null
-    const svg = svgRef.current; if (!svg) return null
-    const rect = svg.getBoundingClientRect(); if (!rect.width) return null
-    const dp = cs1DotR * (rect.width / VW)
-
-    const nodes: React.ReactNode[] = []
-    for (const [box, board, given, dupVals, setBoard] of [
-      ['A', boardA, CS1_GIVEN_A, dupValsA, setBoardA],
-      ['B', boardB, CS1_GIVEN_B, dupValsB, setBoardB],
-    ] as const) {
-      const ox = box === 'A' ? 0 : B_OX
-      const oy = box === 'A' ? 0 : B_OY
-      for (let r = 0; r < 2; r++) {
-        for (let c = 0; c < 2; c++) {
-          const val = (board as (number|null)[][])[r][c]
-          if (val === null || (given as (number|null)[][])[r][c] !== null || !dupVals.has(val)) continue
-          const svgCx = ox + CS_PAD + c * CS_CELL + CS_CELL / 2
-          const svgCy = oy + CS_PAD + r * CS_CELL + CS_CELL / 2
-          const sx = rect.left + svgCx * (rect.width  / VW)
-          const sy = rect.top  + svgCy * (rect.height / VH)
-          nodes.push(
-            <div key={`x${box}${r}${c}`}
-              onClick={() => (setBoard as typeof setBoardA)(prev => { const n = prev.map(row => [...row]); n[r][c] = null; return n })}
-              style={{
-                position: 'fixed', left: sx - dp, top: sy - dp,
-                width: dp * 2, height: dp * 2,
-                display: 'flex', alignItems: 'center', justifyContent: 'center',
-                cursor: 'pointer', pointerEvents: 'auto', zIndex: 9990,
-              }}
-            >
-              <LucideX size={Math.round(dp * 1.1)} strokeWidth={2.5} color="rgba(255,255,255,0.85)" />
-            </div>
-          )
-        }
-      }
-    }
-    return nodes
-  })()
-
-  const fixedOverlays = (
-    <>
-      <style>{`@keyframes csErrorPop {
-        0%   { opacity: .9; transform: scale(1.1); }
-        60%  { opacity: .7; transform: scale(0.85); }
-        100% { opacity: 0;  transform: scale(0.5); }
-      }`}</style>
-      {ghostDot}{errorFlashEl}{flyDotEl}
-      {misplacedXOverlays}
-    </>
-  )
-
-  // eslint-disable-next-line react-hooks/exhaustive-deps
-  const caption = useMemo(() => <>Drag the dot to where it belongs — every box needs all 4 colors!</>, [])
-
-  if (isLandscape) {
-    return (
-      <>
-        <div ref={canvasDivRef} style={{ ...ch4CanvasStyle, flex: 1, display: 'flex', flexDirection: 'row', overflow: 'hidden' }}>
-          <div style={{ flex: 1, minWidth: 0, minHeight: 0, display: 'flex', alignItems: 'center', justifyContent: 'center', position: 'relative' }}>
-            <div ref={boardDivRef}
-              style={{ width: '100%', aspectRatio: `${VW} / ${VH}`, maxHeight: '100%' }}>
-              {svgBoard}
-            </div>
-          </div>
-          {palettePanel('column')}
-        </div>
-        <IntroText>{caption}</IntroText>
-        {fixedOverlays}
-        <SetDone done={bothSolved} />
-      </>
-    )
-  }
-
-  return (
-    <>
-      <div ref={canvasDivRef} style={{ ...ch4CanvasStyle, flex: 1, display: 'flex', flexDirection: 'column', overflow: 'hidden', justifyContent: 'center' }}>
-        <div style={{ flex: 1, minHeight: 0, display: 'flex', alignItems: 'center', justifyContent: 'center', position: 'relative' }}>
-          <div ref={boardDivRef}
-            style={{ height: '100%', aspectRatio: `${VW} / ${VH}`, maxWidth: '100%' }}>
-            {svgBoard}
-          </div>
-        </div>
-        {palettePanel('row')}
-      </div>
-      <IntroText>{caption}</IntroText>
-      {fixedOverlays}
-      <SetDone done={bothSolved} />
-    </>
-  )
-}
-
 // Easier CS4 variants: one box has 3/4 cells pre-filled instead of the usual 2/4.
 // Each variant adds exactly one extra hint to a different box.
 const CS4_PUZZLES_EASY: (number | null)[][][] = [
@@ -6862,17 +6430,6 @@ const CS4_PUZZLES_EASY: (number | null)[][][] = [
   ],
 ]
 
-function CS4Page() {
-  const [cfg] = useState<CSCfg>(() => {
-    // ~50% chance of an easier start with one box already 3/4 filled
-    if (Math.random() < 0.5) {
-      const easy = CS4_PUZZLES_EASY[Math.floor(Math.random() * CS4_PUZZLES_EASY.length)]
-      return { ...CS4_CFG, puzzle: easy }
-    }
-    return CS4_CFG
-  })
-  return <ColorSudokuPage cfg={cfg} />
-}
 function CS4EasyPage() {
   const [cfg] = useState<CSCfg>(() => {
     const easy = CS4_PUZZLES_EASY[Math.floor(Math.random() * CS4_PUZZLES_EASY.length)]
@@ -6884,10 +6441,7 @@ function CS6Page() { return <ColorSudokuPage cfg={CS6_CFG} /> }
 
 // Each tile shows 2 stacked dots. Find all tiles that match the prompt.
 
-const LAF_GREEN = '#50C878'
-const LAF_PAL2  = [RED, BLUE] as const
 const LAF_PAL3  = [RED, YELLOW, BLUE] as const
-const LAF_PAL4  = [RED, YELLOW, BLUE, LAF_GREEN] as const
 
 type LafTile = { dots: number[]; found: boolean; ticking: boolean; wrong: boolean }
 type LafGame = { prompt: number[]; tiles: LafTile[]; matchTotal: number; foundCount: number }
@@ -6924,8 +6478,9 @@ function lafNonMatch(prompt: number[], numColors: number, dotCount: number): Laf
 
 /** Short ascending chime played when a new prompt is revealed */
 function lafPlayNewRound() {
+  const ctx = getSfxCtx(); if (!ctx) return
+  if (ctx.state === 'suspended') { ctx.resume().then(lafPlayNewRound).catch(() => {}); return }
   try {
-    const ctx = new (window.AudioContext || (window as any).webkitAudioContext)()
     const now = ctx.currentTime
     ;[[523, 0], [659, 0.11], [784, 0.22]].forEach(([freq, t]) => {
       const osc = ctx.createOscillator(); const g = ctx.createGain()
@@ -7054,6 +6609,7 @@ function LookAndFind({ colors, cols, rows, numRounds, dotCount, maxDotD, flipPro
   }, [roundDone, active, pageDone, round])  // eslint-disable-line react-hooks/exhaustive-deps
 
   const tap = (i: number) => {
+    sfxUnlock()
     if (!active || roundDone || tiles[i].found || tiles[i].wrong) return
     const isMatch = tiles[i].dots.every((d, j) => d === prompt[j])
     if (isMatch) {
@@ -7182,20 +6738,6 @@ function LookAndFind({ colors, cols, rows, numRounds, dotCount, maxDotD, flipPro
   )
 }
 
-// P4: 3 colours · 5×3 grid · 1 round · 2-dot · max 64px dots
-function LookAndFindP4() {
-  return <LookAndFind colors={LAF_PAL3} cols={5} rows={3} numRounds={1} dotCount={2} maxDotD={64} />
-}
-
-// P5: 3 colours · 5×3 grid · 3 rounds · 4-dot 2×2 grid · max 64px dots
-function LookAndFindP5() {
-  return <LookAndFind colors={LAF_PAL3} cols={5} rows={3} numRounds={3} dotCount={4} maxDotD={64} />
-}
-
-// P6: 3 colours · 5×3 grid · 3 rounds · 4-dot 2×2 grid · prompt shows then auto-flips
-function LookAndFindP6() {
-  return <LookAndFind colors={LAF_PAL3} cols={5} rows={3} numRounds={3} dotCount={4} flipPrompt />
-}
 // Easy/Hard difficulty variants
 function LafEasy() { return <LookAndFind colors={LAF_PAL3} cols={5} rows={3} numRounds={3} dotCount={2} maxDotD={64} /> }
 function LafHard() { return <LookAndFind colors={LAF_PAL3} cols={5} rows={3} numRounds={3} dotCount={4} maxDotD={64} flipPrompt /> }
@@ -8166,10 +7708,6 @@ function snMkPage(tickMs: number, wrap = false): React.ComponentType {
   return SnakePage
 }
 
-const SnakePage1 = snMkPage(400)
-const SnakePage2 = snMkPage(260)
-const SnakePage3 = snMkPage(160)
-
 const SnakeEasy = snMkPage(320, true)   // 80% as slow as before, edges wrap around
 const SnakeHard = snMkPage(160, false)  // faster, die on edge
 
@@ -8194,8 +7732,9 @@ type BPBurst = { id: number; x: number; y: number; col: number; t0: number }
 type BPFall  = { id: number; x: number; y: number; vx: number; vy: number; col: number; t0: number }
 
 function bpSfxShoot() {
+  const ctx = getSfxCtx(); if (!ctx) return
+  if (ctx.state === 'suspended') { ctx.resume().then(bpSfxShoot).catch(() => {}); return }
   try {
-    const ctx = new (window.AudioContext || (window as any).webkitAudioContext)()
     const now = ctx.currentTime
     const osc = ctx.createOscillator(); const g = ctx.createGain()
     osc.type = 'triangle'
@@ -8206,8 +7745,9 @@ function bpSfxShoot() {
 }
 
 function bpSfxBurst() {
+  const ctx = getSfxCtx(); if (!ctx) return
+  if (ctx.state === 'suspended') { ctx.resume().then(bpSfxBurst).catch(() => {}); return }
   try {
-    const ctx = new (window.AudioContext || (window as any).webkitAudioContext)()
     const now = ctx.currentTime
     const osc = ctx.createOscillator(); const g = ctx.createGain()
     osc.type = 'square'
@@ -8218,8 +7758,9 @@ function bpSfxBurst() {
 }
 
 function bpSfxFall() {
+  const ctx = getSfxCtx(); if (!ctx) return
+  if (ctx.state === 'suspended') { ctx.resume().then(bpSfxFall).catch(() => {}); return }
   try {
-    const ctx = new (window.AudioContext || (window as any).webkitAudioContext)()
     const now = ctx.currentTime
     const osc = ctx.createOscillator(); const g = ctx.createGain()
     osc.type = 'sine'
@@ -8230,8 +7771,9 @@ function bpSfxFall() {
 }
 
 function bpSfxLose() {
+  const ctx = getSfxCtx(); if (!ctx) return
+  if (ctx.state === 'suspended') { ctx.resume().then(bpSfxLose).catch(() => {}); return }
   try {
-    const ctx = new (window.AudioContext || (window as any).webkitAudioContext)()
     const now = ctx.currentTime
     const osc = ctx.createOscillator(); const g = ctx.createGain()
     osc.type = 'sawtooth'
@@ -8572,8 +8114,16 @@ function bpMkPage(cols: number, startRows: number, numColors: number, growMs?: n
       const p = toSvg(e.clientX, e.clientY); if (!p) return
       updateAim(p.x, p.y)
     }
-    const onClick = (e: React.MouseEvent) => {
+    // Touchscreens never fire a hover/pointermove before the first contact, so the aim
+    // must also be primed on pointerdown — otherwise the first tap always shoots straight up.
+    const onPointerDown = (e: React.PointerEvent) => {
+      sfxUnlock()
       if (stateRef.current === 'lost') { reset(); return }
+      if (stateRef.current !== 'idle') return
+      const p = toSvg(e.clientX, e.clientY); if (!p) return
+      updateAim(p.x, p.y)
+    }
+    const onPointerUp = (e: React.PointerEvent) => {
       if (stateRef.current !== 'idle') return
       const p = toSvg(e.clientX, e.clientY); if (!p) return
       const { dx, dy } = aimDir(SX, SY, p.x, p.y)
@@ -8595,7 +8145,7 @@ function bpMkPage(cols: number, startRows: number, numColors: number, growMs?: n
           <div style={{ width: '100%', aspectRatio: `${VW} / ${VH}`, maxHeight: '100%' }}>
           <svg ref={svgRef} viewBox={`0 0 ${VW} ${VH}`}
             style={{ width: '100%', height: '100%', display: 'block', touchAction: 'none', userSelect: 'none', cursor: 'crosshair' }}
-            onPointerMove={onPointerMove} onClick={onClick}
+            onPointerDown={onPointerDown} onPointerMove={onPointerMove} onPointerUp={onPointerUp}
           >
             <defs>
               <marker id={arrowId} markerWidth={11} markerHeight={11} refX={8} refY={5.5} orient="auto" viewBox="0 0 11 11">
@@ -9218,39 +8768,19 @@ export default function PressHere() {
             {/* ── Header ── */}
             <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: isMobile ? 6 : 10 }}>
               <div style={{ display: 'flex', alignItems: 'center', gap: 6, fontSize: 'clamp(15px,3vw,22px)', fontWeight: 700, color: '#222', letterSpacing: -0.3, fontFamily: 'inherit' }}>
-                <span style={{ width: 'clamp(7px,1.2vw,10px)', height: 'clamp(7px,1.2vw,10px)', borderRadius: '50%', background: RED,    flexShrink: 0, display: 'inline-block' }} />
+                <span style={{ width: 'clamp(8.4px,1.44vw,12px)', height: 'clamp(8.4px,1.44vw,12px)', borderRadius: '50%', background: RED,    flexShrink: 0, display: 'inline-block' }} />
                 Press
-                <span style={{ width: 'clamp(7px,1.2vw,10px)', height: 'clamp(7px,1.2vw,10px)', borderRadius: '50%', background: YELLOW, flexShrink: 0, display: 'inline-block' }} />
+                <span style={{ width: 'clamp(8.4px,1.44vw,12px)', height: 'clamp(8.4px,1.44vw,12px)', borderRadius: '50%', background: YELLOW, flexShrink: 0, display: 'inline-block' }} />
                 here
-                <span style={{ width: 'clamp(7px,1.2vw,10px)', height: 'clamp(7px,1.2vw,10px)', borderRadius: '50%', background: BLUE,   flexShrink: 0, display: 'inline-block' }} />
+                <span style={{ width: 'clamp(8.4px,1.44vw,12px)', height: 'clamp(8.4px,1.44vw,12px)', borderRadius: '50%', background: BLUE,   flexShrink: 0, display: 'inline-block' }} />
               </div>
 
               {/* Game switcher + difficulty toggle + Replay */}
               <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-                <button
-                  onClick={() => setShowPanel(true)}
-                  style={{
-                    display: 'flex', alignItems: 'center', gap: isMobile ? 5 : 7,
-                    padding: isMobile ? '4px 10px 4px 8px' : '5px 14px 5px 10px',
-                    borderRadius: 20, background: '#fff',
-                    border: '1.5px solid #e0e0e0',
-                    fontSize: isMobile ? 12 : 13, fontWeight: 700, color: '#555',
-                    fontFamily: 'inherit', cursor: 'pointer',
-                    transition: 'all 0.15s ease',
-                  }}
-                  onMouseEnter={e => { e.currentTarget.style.borderColor = '#bbb'; e.currentTarget.style.color = '#222' }}
-                  onMouseLeave={e => { e.currentTarget.style.borderColor = '#e0e0e0'; e.currentTarget.style.color = '#555' }}
-                >
-                  <span style={{ fontSize: isMobile ? 15 : 17 }}>{currentGame.emoji}</span>
-                  {!isMobile && <span style={{ maxWidth: 100, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{currentGame.title}</span>}
-                  <svg width="10" height="7" viewBox="0 0 10 7" fill="none" style={{ flexShrink: 0, opacity: 0.45 }}>
-                    <path d="M1 1l4 4 4-4" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round"/>
-                  </svg>
-                </button>
                 {currentGame.hasDifficulty && (
                   <div style={{
                     display: 'flex', alignItems: 'center', flexShrink: 0,
-                    border: '1.5px solid #d0ccc5', borderRadius: 20,
+                    border: '1.5px solid #d0ccc5', borderRadius: 10,
                     background: '#fff', overflow: 'hidden',
                     height: 34,
                   }}>
@@ -9277,7 +8807,7 @@ export default function PressHere() {
                 {currentGame.hasBoardMode && (
                   <div style={{
                     display: 'flex', alignItems: 'center', flexShrink: 0,
-                    border: '1.5px solid #d0ccc5', borderRadius: 20,
+                    border: '1.5px solid #d0ccc5', borderRadius: 10,
                     background: '#fff', overflow: 'hidden',
                     height: 34,
                   }}>
@@ -9302,6 +8832,27 @@ export default function PressHere() {
                   </div>
                 )}
                 <ReplayIconBtn onClick={() => startGame(gameId)} />
+                <button
+                  onClick={() => setShowPanel(true)}
+                  style={{
+                    display: 'flex', alignItems: 'center', gap: isMobile ? 5 : 7,
+                    height: 34, flexShrink: 0,
+                    padding: isMobile ? '0 10px 0 8px' : '0 14px 0 10px',
+                    borderRadius: 10, background: '#fff',
+                    border: '1.5px solid #e0e0e0',
+                    fontSize: isMobile ? 12 : 13, fontWeight: 700, color: '#555',
+                    fontFamily: 'inherit', cursor: 'pointer',
+                    transition: 'all 0.15s ease',
+                  }}
+                  onMouseEnter={e => { e.currentTarget.style.borderColor = '#bbb'; e.currentTarget.style.color = '#222' }}
+                  onMouseLeave={e => { e.currentTarget.style.borderColor = '#e0e0e0'; e.currentTarget.style.color = '#555' }}
+                >
+                  <span style={{ fontSize: isMobile ? 15 : 17 }}>{currentGame.emoji}</span>
+                  {!isMobile && <span style={{ maxWidth: 100, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{currentGame.title}</span>}
+                  <svg width="10" height="7" viewBox="0 0 10 7" fill="none" style={{ flexShrink: 0, opacity: 0.45 }}>
+                    <path d="M1 1l4 4 4-4" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round"/>
+                  </svg>
+                </button>
               </div>
             </div>
 
@@ -9338,8 +8889,8 @@ export default function PressHere() {
             </GameDifficultyCtx.Provider>
 
             {/* Caption + Next button */}
-            <div style={{ position: 'relative', display: 'flex', alignItems: 'center', justifyContent: 'flex-start', marginTop: isMobile ? 8 : 14, minHeight: isMobile ? 38 : 46 }}>
-              <div style={{ display: 'flex', alignItems: 'center', gap: 0, fontSize: 'clamp(13px,2vw,18px)', fontWeight: 600, color: '#444', lineHeight: 1.4, maxWidth: 'calc(100% - 190px)' }}>
+            <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginTop: isMobile ? 8 : 14, minHeight: isMobile ? 38 : 46 }}>
+              <div style={{ display: 'flex', alignItems: 'center', gap: 0, fontSize: 'clamp(13px,2vw,18px)', fontWeight: 600, color: '#444', lineHeight: 1.4, flex: '1 1 auto', minWidth: 0 }}>
                 {speakText && <SpeakButton text={speakText} />}
                 <span>{caption}</span>
               </div>
@@ -9350,22 +8901,22 @@ export default function PressHere() {
                     : () => nav(page + 1)
                 }
                 style={{
-                  position: 'absolute', right: 0,
-                  display: 'flex', alignItems: 'center', gap: isMobile ? 4 : 8,
-                  padding: isMobile ? '7px 16px' : '10px 28px', borderRadius: 40,
-                  background: '#FDD302', border: 'none',
-                  fontSize: isMobile ? 16 : 20, fontWeight: 800, color: '#333',
+                  display: 'flex', alignItems: 'center', gap: 4,
+                  height: 34, padding: '0 14px', borderRadius: 9,
+                  background: '#fff', border: '1.5px solid #d0ccc5',
+                  fontSize: 14, fontWeight: 700, color: '#555',
                   fontFamily: 'inherit', cursor: 'pointer', flexShrink: 0,
                   visibility: done ? 'visible' : 'hidden',
+                  transition: 'all 0.15s ease',
                 }}
-                onMouseEnter={e => (e.currentTarget.style.background = '#ffc700')}
-                onMouseLeave={e => (e.currentTarget.style.background = '#FDD302')}
+                onMouseEnter={e => { e.currentTarget.style.borderColor = '#bbb'; e.currentTarget.style.color = '#222' }}
+                onMouseLeave={e => { e.currentTarget.style.borderColor = '#d0ccc5'; e.currentTarget.style.color = '#555' }}
                 onMouseDown={e => (e.currentTarget.style.transform = 'scale(0.96)')}
                 onMouseUp={e => (e.currentTarget.style.transform = 'scale(1)')}
               >
                 {isLast && currentGame.id === 'intro'
                   ? 'Done'
-                  : <>Next <ChevronRight size={isMobile ? 17 : 22} strokeWidth={3} /></>}
+                  : <>Next <ChevronRight size={15} strokeWidth={3} /></>}
               </button>
             </div>
 
